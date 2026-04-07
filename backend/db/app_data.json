@@ -1,0 +1,221 @@
+{
+  "conversations": {
+    "student_2": [
+      {
+        "id": "049df06bc3e8",
+        "student_id": "student_2",
+        "role": "user",
+        "content": "취업 자료 좀요",
+        "choices": null,
+        "has_handoff": false,
+        "timestamp": "2026-04-07T18:46:33"
+      },
+      {
+        "id": "95394a13fd52",
+        "student_id": "student_2",
+        "role": "assistant",
+        "content": "어떤 취업 자료를 찾고 계신가요? 아래에서 선택해 주세요!",
+        "choices": [
+          {
+            "label": "📄 포트폴리오 양식",
+            "description": "프로젝트 정리용 포트폴리오 템플릿"
+          },
+          {
+            "label": "📋 이번 달 채용 공고",
+            "description": "4월 IT 기업 공개 채용 리스트"
+          },
+          {
+            "label": "🎤 면접 기출문제",
+            "description": "최근 기출 면접 질문 모음"
+          }
+        ],
+        "has_handoff": true,
+        "timestamp": "2026-04-07T18:46:36"
+      }
+    ]
+  },
+  "handoff_queue": [
+    {
+      "id": "340ed5218eb6",
+      "student_id": "student_3",
+      "student_name": "박지훈",
+      "reason": "슬럼프 상담 요청",
+      "last_message": "요즘 공부에 의욕이 없어요... 멘토님과 이야기하고 싶습니다.",
+      "priority": "high",
+      "status": "pending",
+      "created_at": "2026-04-07T20:16:33"
+    },
+    {
+      "id": "61b8e394c016",
+      "student_id": "student_2",
+      "student_name": "이서연",
+      "reason": "프로젝트 방향 상담",
+      "last_message": "팀 프로젝트 주제를 정하고 싶은데 조언이 필요해요.",
+      "priority": "medium",
+      "status": "pending",
+      "created_at": "2026-04-07T17:46:33"
+    }
+  ],
+  "ta_slots": [
+    {
+      "id": "bd0322d1e91d",
+      "ta_name": "정우성 조교",
+      "date": "2026-04-07",
+      "start_time": "10:00",
+      "end_time": "11:00",
+      "is_available": true,
+      "booked_by": null,
+      "booked_by_name": null,
+      "booking_description": null,
+      "briefing_report": null
+    },
+    {
+      "id": "6d233767376b",
+      "ta_name": "정우성 조교",
+      "date": "2026-04-07",
+      "start_time": "14:00",
+      "end_time": "15:00",
+      "is_available": false,
+      "booked_by": "student_1",
+      "booked_by_name": "김민수",
+      "booking_description": "파이썬 클래스에서 self가 뭔지 모르겠어요",
+      "briefing_report": {
+        "student_name": "김민수",
+        "search_history": "함수 매개변수, 클래스 기초",
+        "core_need": "객체지향 기초 (클래스 생성 및 __init__ 메서드의 이해)",
+        "ai_recommendation": "학생이 함수 파트부터 약점이 있으니, 일반 함수와 메서드의 차이점부터 시각적으로 비교해 주는 것을 권장합니다."
+      }
+    },
+    {
+      "id": "dc66d4938aa2",
+      "ta_name": "정우성 조교",
+      "date": "2026-04-08",
+      "start_time": "10:00",
+      "end_time": "11:00",
+      "is_available": true,
+      "booked_by": null,
+      "booked_by_name": null,
+      "booking_description": null,
+      "briefing_report": null
+    },
+    {
+      "id": "0d677b0e914f",
+      "ta_name": "정우성 조교",
+      "date": "2026-04-08",
+      "start_time": "11:00",
+      "end_time": "12:00",
+      "is_available": true,
+      "booked_by": null,
+      "booked_by_name": null,
+      "booking_description": null,
+      "briefing_report": null
+    },
+    {
+      "id": "f1319c172730",
+      "ta_name": "한소희 조교",
+      "date": "2026-04-07",
+      "start_time": "13:00",
+      "end_time": "14:00",
+      "is_available": true,
+      "booked_by": null,
+      "booked_by_name": null,
+      "booking_description": null,
+      "briefing_report": null
+    },
+    {
+      "id": "0d889f2dc710",
+      "ta_name": "한소희 조교",
+      "date": "2026-04-08",
+      "start_time": "15:00",
+      "end_time": "16:00",
+      "is_available": true,
+      "booked_by": null,
+      "booked_by_name": null,
+      "booking_description": null,
+      "briefing_report": null
+    }
+  ],
+  "knowledge_docs": [],
+  "student_events": {
+    "student_1": [
+      {
+        "timestamp": "2026-04-04T20:46:33",
+        "event_type": "search",
+        "content": "함수 매개변수",
+        "detail": "챗봇에서 키워드 검색"
+      },
+      {
+        "timestamp": "2026-04-05T20:46:33",
+        "event_type": "doc_access",
+        "content": "Python 기초 교재.pdf",
+        "detail": "챕터 7: 함수 파트 열람"
+      },
+      {
+        "timestamp": "2026-04-06T20:46:33",
+        "event_type": "search",
+        "content": "클래스 self",
+        "detail": "챗봇에서 키워드 검색"
+      },
+      {
+        "timestamp": "2026-04-07T15:46:33",
+        "event_type": "chat",
+        "content": "파이썬 클래스에서 self가 뭔지 모르겠어요",
+        "detail": "AI가 개념 설명 제공"
+      }
+    ],
+    "student_2": [
+      {
+        "timestamp": "2026-04-02T20:46:33",
+        "event_type": "search",
+        "content": "포트폴리오 작성법",
+        "detail": "챗봇에서 키워드 검색"
+      },
+      {
+        "timestamp": "2026-04-05T20:46:33",
+        "event_type": "doc_access",
+        "content": "이력서 작성 가이드.pdf",
+        "detail": "전체 문서 열람"
+      },
+      {
+        "timestamp": "2026-04-06T20:46:33",
+        "event_type": "chat",
+        "content": "취업 자료 좀요",
+        "detail": "AI가 선택지 3개 제시"
+      }
+    ],
+    "student_3": [
+      {
+        "timestamp": "2026-03-31T20:46:33",
+        "event_type": "search",
+        "content": "슬럼프 극복",
+        "detail": "챗봇에서 키워드 검색"
+      },
+      {
+        "timestamp": "2026-04-04T20:46:33",
+        "event_type": "search",
+        "content": "자격증 종류",
+        "detail": "챗봇에서 키워드 검색"
+      },
+      {
+        "timestamp": "2026-04-06T20:46:33",
+        "event_type": "handoff",
+        "content": "멘토 상담 요청",
+        "detail": "슬럼프 상담 요청 — 대기열 등록"
+      }
+    ]
+  },
+  "students": {
+    "student_1": {
+      "id": "student_1",
+      "name": "김민수"
+    },
+    "student_2": {
+      "id": "student_2",
+      "name": "이서연"
+    },
+    "student_3": {
+      "id": "student_3",
+      "name": "박지훈"
+    }
+  }
+}
