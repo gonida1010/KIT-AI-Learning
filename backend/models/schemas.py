@@ -1,30 +1,28 @@
 """Pydantic 스키마 — Edu-Sync AI 전체 데이터 모델."""
 
 from __future__ import annotations
-from datetime import datetime
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel
 
 
-# ─── Chat (내부 저장용 — 카카오 웹훅에서 사용) ──────────────
+# ── Chat ─────────────────────────────────────────────────
 class Choice(BaseModel):
     label: str
     description: str
 
 
-# ─── Handoff Queue ──────────────────────────────────────────
+# ── Handoff ──────────────────────────────────────────────
 class HandoffRequest(BaseModel):
     id: str = ""
     student_id: str
     student_name: str = ""
     reason: str = ""
     last_message: str = ""
-    priority: str = "medium"  # high | medium | low
-    status: str = "pending"   # pending | in_progress | resolved
+    priority: str = "medium"
+    status: str = "pending"
     created_at: str = ""
 
 
-# ─── Mentor Briefing ────────────────────────────────────────
+# ── Mentor Briefing ─────────────────────────────────────
 class BriefingSummary(BaseModel):
     total_ai_conversations: int = 0
     pending_handoffs: int = 0
@@ -33,10 +31,10 @@ class BriefingSummary(BaseModel):
     queue: list[HandoffRequest] = []
 
 
-# ─── Student Timeline ───────────────────────────────────────
+# ── Student Timeline ────────────────────────────────────
 class TimelineEvent(BaseModel):
     timestamp: str
-    event_type: str  # "search" | "doc_access" | "chat" | "handoff"
+    event_type: str
     content: str
     detail: str = ""
 
@@ -44,17 +42,18 @@ class TimelineEvent(BaseModel):
 class StudentProfile(BaseModel):
     id: str
     name: str
+    career_pref: str = ""
     events: list[TimelineEvent] = []
-    chat_summary: str = ""
     frequent_keywords: list[str] = []
 
 
-# ─── TA Scheduling ──────────────────────────────────────────
+# ── TA Scheduling ───────────────────────────────────────
 class TASlot(BaseModel):
     id: str = ""
+    ta_id: str = ""
     ta_name: str
-    date: str       # YYYY-MM-DD
-    start_time: str  # HH:MM
+    date: str
+    start_time: str
     end_time: str
     is_available: bool = True
     booked_by: str | None = None
@@ -65,24 +64,29 @@ class TASlot(BaseModel):
 
 class BookingRequest(BaseModel):
     slot_id: str
-    student_id: str = "student_1"
+    student_id: str = "student_001"
     student_name: str = "김민수"
-    description: str  # 수강생의 자유 입력
+    description: str
 
 
-# ─── Knowledge Base ─────────────────────────────────────────
+# ── Knowledge Base ──────────────────────────────────────
 class KnowledgeDoc(BaseModel):
     id: str = ""
     filename: str
-    doc_type: str = "기타"  # 규정, 공모전, 자소서, 취업, 커리큘럼
+    doc_type: str = "기타"
     uploaded_at: str = ""
     chunk_count: int = 0
 
 
-# ─── CurriMap (기존 분석) ────────────────────────────────────
-class AnalysisResult(BaseModel):
-    location: str
-    progress_percentage: int
-    why_learn: str
-    whats_next: str
-    glossary: dict[str, str]
+# ── Curation ────────────────────────────────────────────
+class CurationItem(BaseModel):
+    id: str = ""
+    category: str
+    title: str
+    summary: str
+    content: str
+    date: str
+    weekday: int = 0
+    source_filename: str = ""
+    tags: list[str] = []
+    created_at: str = ""

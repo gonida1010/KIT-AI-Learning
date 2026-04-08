@@ -1,242 +1,305 @@
-# Edu-Sync AI — KDT 하이브리드 관리 플랫폼 (카카오톡 실연동)
+# Edu-Sync AI v3.0
 
-> 수강생은 **카카오톡 채널**로 AI 멘토와 24시간 대화하고,  
-> 멘토·조교는 **웹 대시보드**에서 대기열·브리핑·스케줄을 관리합니다.
+> KDT 멀티 에이전트 하이브리드 멘토링 플랫폼
+
+AI 챗봇, RAG 지식 검색, 일정 큐레이션, 조교 예약 시스템을 통합한 KDT(K-Digital Training) 교육 지원 플랫폼입니다.
 
 ---
 
-## 1. 핵심 아키텍처
+## 주요 기능
+
+| 기능                   | 설명                                                                    |
+| ---------------------- | ----------------------------------------------------------------------- |
+| **멀티 에이전트 챗봇** | 질문 의도에 따라 Agent A(행정·커리어) / Agent B(학습·조교) 자동 라우팅  |
+| **RAG 지식 검색**      | PDF 문서 → FAISS 벡터 인덱스 → 의미 기반 검색 + LLM 답변 생성           |
+| **일정별 큐레이션**    | 요일별 자동 분류(월=채용정보, 화=IT뉴스…) + FAISS 시맨틱 검색           |
+| **TA 보충수업 예약**   | 월간 달력 기반 스케줄 관리, 반복 슬롯 생성, AI 브리핑 리포트            |
+| **멘토 대시보드**      | 통합 단일 페이지: 상담 큐, 큐레이션, 수강생 관리, PDF 업로드, 초대 코드 |
+| **하이브리드 인증**    | 카카오 OAuth 2.0 + QR 로그인 + 초대 코드 + 데모 모드                    |
+
+---
+
+## 기술 스택
+
+- **Backend**: FastAPI, Python 3.11+, LangChain, FAISS, OpenAI GPT-4o-mini
+- **Frontend**: React 19, Vite, Tailwind CSS 3, Lucide React, Framer Motion
+- **벡터 DB**: FAISS (knowledge + curation 이중 인덱스)
+- **인증**: Kakao OAuth 2.0, 세션 토큰, QR 로그인
+
+---
+
+## 아키텍처
 
 ```
- 수강생 (카카오톡 앱)
-      │
-      ▼
- 카카오 i 오픈빌더 ── Skill Server Webhook ──▶ POST /api/kakao/webhook
-                                                      │
-                                              ┌───────▼────────┐
-                                              │  FastAPI :5060  │
-                                              │  ├─ kakao.py    │◀── 카카오 스킬 서버
-                                              │  ├─ mentor.py   │
-                                              │  ├─ ta.py       │
-                                              │  ├─ analyze.py  │
-                                              │  └─ knowledge.py│
-                                              │                 │
-                                              │  AI Services    │
-                                              │  ├─ ai_chat.py  │── GPT-4o-mini
-                                              │  ├─ rag.py      │── FAISS 벡터스토어
-                                              │  └─ briefing.py │
-                                              └───────┬────────┘
-                                                      │
-                                              ┌───────▼────────┐
-                                              │  React 웹 SPA  │◀── 멘토/조교 전용
-                                              │  (관리 대시보드) │    http://localhost:3000
-                                              └────────────────┘
+ 수강생 (카카오톡)              수강생 (웹 챗봇)
+      │                              │
+      ▼                              ▼
+ 카카오 i 오픈빌더              React SPA :3000
+      │                              │
+      └──── POST /api/kakao/chat ────┘
+                     │
+             ┌───────▼────────┐
+             │  FastAPI :5060  │
+             │  ├─ chat.py    │──── 웹 챗봇 API
+             │  ├─ kakao.py   │──── 카카오 스킬 서버
+             │  ├─ auth.py    │──── OAuth / QR / 데모
+             │  ├─ mentor.py  │──── 멘토 대시보드 API
+             │  ├─ ta.py      │──── TA 스케줄 API
+             │  ├─ knowledge  │──── PDF 업로드/관리
+             │  └─ curation   │──── 큐레이션 CRUD
+             │                │
+             │  AI Services   │
+             │  ├─ agent_router.py │── 멀티에이전트 분기
+             │  ├─ agent_a.py │── 행정·커리어 RAG
+             │  ├─ agent_b.py │── 학습·조교 예약
+             │  ├─ rag.py     │── FAISS 벡터스토어
+             │  └─ llm_provider │── OpenAI / 온프레미스
+             └────────────────┘
 ```
 
-**수강생** → 카카오톡에서만 대화 (웹에 학생용 페이지 없음)  
-**멘토/조교** → 웹 대시보드에서 대기열·브리핑·스케줄 관리
-
 ---
 
-## 2. 핵심 기능
-
-| #   | 기능                     | 사용자      | 설명                                                     |
-| --- | ------------------------ | ----------- | -------------------------------------------------------- |
-| 1   | **카카오톡 AI 멘토**     | 수강생      | 카카오톡 채널에서 24시간 AI 상담. QuickReply 선택지 제공 |
-| 2   | **멘토 핸드오프**        | 수강생→멘토 | "멘토 상담 요청" 시 대기열 자동 등록                     |
-| 3   | **출근 브리핑 대시보드** | 멘토        | 밤사이 AI 응대 내역 + 대기열 + 학생 타임라인             |
-| 4   | **조교 스마트 스케줄링** | 수강생→조교 | 빈 시간 예약 + AI 브리핑 리포트 자동 생성                |
-| 5   | **CurriMap AI**          | 관리자      | 코드/스크린샷 → 커리큘럼 위치 시각화                     |
-
----
-
-## 3. 프로젝트 구조
+## 프로젝트 구조
 
 ```
 KIT-AI-Learning/
 ├── backend/
-│   ├── main.py                  # FastAPI 앱 + 라우터 등록
+│   ├── main.py                 # FastAPI 앱 (lifespan에서 벡터스토어 자동 로드)
 │   ├── requirements.txt
-│   ├── .env                     # OPENAI_API_KEY
+│   ├── .env                    # OPENAI_API_KEY 설정
+│   ├── data/                   # PDF 문서 저장 폴더
+│   ├── vectorstore/            # FAISS 지식 인덱스
+│   ├── vectorstore_curation/   # FAISS 큐레이션 인덱스
+│   ├── db/
+│   │   └── store.py            # JSON 기반 데이터 저장소
+│   ├── models/
+│   │   └── schemas.py          # Pydantic 모델
 │   ├── routers/
-│   │   ├── kakao.py             # ★ 카카오 Webhook 엔드포인트
-│   │   ├── mentor.py            #   멘토 브리핑·대기열·타임라인
-│   │   ├── ta.py                #   조교 스케줄·예약·브리핑
-│   │   ├── analyze.py           #   CurriMap 코드 분석
-│   │   └── knowledge.py         #   지식 베이스 관리
-│   ├── services/
-│   │   ├── ai_chat.py           #   LLM 채팅 응답 생성
-│   │   ├── briefing.py          #   조교 브리핑 리포트
-│   │   ├── analyze.py           #   코드 분석 + Vision OCR
-│   │   └── rag.py               #   PDF → FAISS 벡터스토어
-│   ├── models/schemas.py        # Pydantic 모델
-│   ├── db/store.py              # JSON 영속 데이터 저장소
-│   └── data/                    # 강의 계획서 PDF
-│
-├── frontend/                    # ★ 관리자(멘토/조교) 전용
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── pages/
-│   │   │   ├── MentorDashboard.jsx
-│   │   │   ├── TADashboard.jsx
-│   │   │   ├── CurriMap.jsx
-│   │   │   └── KnowledgeBase.jsx
-│   │   └── components/          # Sidebar, Layout, QueueList 등
-│   ├── package.json
-│   └── vite.config.js
-│
-└── README.md
+│   │   ├── auth.py             # 인증 (OAuth, QR, 데모)
+│   │   ├── chat.py             # 웹 챗봇 API
+│   │   ├── kakao.py            # 카카오톡 i 오픈빌더 웹훅
+│   │   ├── mentor.py           # 멘토 API
+│   │   ├── ta.py               # TA 스케줄 API (반복 슬롯 포함)
+│   │   ├── knowledge.py        # PDF 업로드/관리
+│   │   └── curation.py         # 큐레이션 데이터 CRUD
+│   └── services/
+│       ├── agent_router.py     # 멀티 에이전트 라우터
+│       ├── agent_a.py          # 행정·커리어 에이전트 (RAG + 큐레이션)
+│       ├── agent_b.py          # 학습·조교 에이전트 (예약 등)
+│       ├── llm_provider.py     # LLM 추상화 (OpenAI / 온프레미스)
+│       └── rag.py              # RAG + 벡터스토어 관리
+└── frontend/
+    ├── package.json
+    ├── vite.config.js          # 프록시: :3000 → :5060
+    ├── tailwind.config.js      # 커스텀 primary 블루 팔레트
+    └── src/
+        ├── App.jsx
+        ├── index.css
+        ├── contexts/AuthContext.jsx
+        ├── components/
+        │   ├── Layout.jsx
+        │   └── Sidebar.jsx
+        └── pages/
+            ├── LoginPage.jsx       # 로그인 (카카오/QR/데모)
+            ├── StudentChat.jsx     # 수강생 AI 챗봇
+            ├── MentorDashboard.jsx # 멘토 통합 대시보드
+            ├── TADashboard.jsx     # TA 달력 스케줄 관리
+            └── KnowledgeBase.jsx   # 지식 베이스 (PDF 관리)
 ```
 
 ---
 
-## 4. API 엔드포인트
+## 실행 방법
 
-### 카카오 Webhook (★ 핵심)
+### 1. 환경변수 설정
 
-| Method | Path                          | 설명                                       |
-| ------ | ----------------------------- | ------------------------------------------ |
-| `POST` | `/api/kakao/webhook`          | 메인 스킬 서버 — 모든 카카오톡 메시지 처리 |
-| `POST` | `/api/kakao/webhook/schedule` | 조교 보충 수업 예약 스킬 블록              |
+```bash
+# backend/.env
+OPENAI_API_KEY=sk-proj-your-key-here
 
-### 멘토
+# (선택) 카카오 OAuth 사용 시
+KAKAO_CLIENT_ID=your-rest-api-key
+KAKAO_REDIRECT_URI=http://localhost:3000
+```
 
-| Method | Path                                | 설명          |
-| ------ | ----------------------------------- | ------------- |
-| `GET`  | `/api/mentor/briefing`              | 출근 브리핑   |
-| `GET`  | `/api/mentor/queue`                 | 상담 대기열   |
-| `POST` | `/api/mentor/queue/{id}/resolve`    | 대기열 해결   |
-| `GET`  | `/api/mentor/students`              | 전체 학생     |
-| `GET`  | `/api/mentor/student/{id}/timeline` | 학생 타임라인 |
-
-### 조교 · 지식 베이스 · CurriMap
-
-| Method     | Path                            | 설명        |
-| ---------- | ------------------------------- | ----------- |
-| `GET/POST` | `/api/ta/slots`, `/api/ta/book` | 스케줄·예약 |
-| `POST`     | `/api/knowledge/upload`         | 문서 업로드 |
-| `POST`     | `/api/analyze`                  | 코드 분석   |
-
----
-
-## 5. 시작하기
-
-### 사전 요구사항
-
-- Python 3.11+, Node.js 18+
-- OpenAI API Key
-
-### 1단계: 백엔드
+### 2. 백엔드 실행
 
 ```bash
 cd backend
 python -m venv venv
+
+# Windows
 venv\Scripts\activate
+# macOS/Linux
+source venv/bin/activate
+
 pip install -r requirements.txt
-# .env 파일에 OPENAI_API_KEY=sk-proj-... 설정
-python main.py   # → :5060
+uvicorn main:app --host 0.0.0.0 --port 5060 --reload
 ```
 
-### 2단계: 프론트엔드 (관리자 대시보드)
+서버 구동 시 `data/` 폴더의 PDF가 자동으로 FAISS 인덱스에 로드됩니다.
+
+### 3. 프론트엔드 실행
 
 ```bash
 cd frontend
 npm install
-npm run dev   # → http://localhost:3000
+npm run dev
 ```
 
-### 3단계: 카카오 채널 연동
+`http://localhost:3000` 접속 → Vite 프록시로 백엔드(`localhost:5060`)에 자동 연결
 
-아래 "배포 & 카카오톡 연동 가이드" 참조.
+### 4. 데모 로그인
+
+로그인 화면에서 **데모** 탭 → 수강생/멘토/TA 역할 선택 → 즉시 체험 가능
 
 ---
 
-## 6. 카카오톡 연동 가이드 (배포 후 해야 할 일)
+## PDF → AI 파이프라인
 
-### 📌 Step 1 — 서버 배포
+1. `data/` 폴더에 PDF 배치 또는 웹에서 업로드 (`/api/knowledge/upload`)
+2. 서버 시작 시 `load_or_build_vectorstore()` → PyPDF로 텍스트 추출 → 청크 분할 → OpenAI Embeddings → FAISS 인덱스 저장
+3. 학생 질문 → 에이전트 라우터 → Agent A/B → RAG 검색 → 관련 청크 + LLM 답변 생성
 
-로컬에서는 카카오 오픈빌더가 webhook을 호출할 수 없습니다.  
-아래 중 하나로 **공개 URL**을 확보하세요:
+---
 
-| 방법        | 난이도 | 비용    | 설명                                              |
-| ----------- | ------ | ------- | ------------------------------------------------- |
-| **ngrok**   | ⭐     | 무료    | `ngrok http 5060` → 임시 공개 URL (개발·테스트용) |
-| **Railway** | ⭐⭐   | 무료~$5 | GitHub 연결 → 자동 배포                           |
-| **Render**  | ⭐⭐   | 무료    | Python Web Service 생성                           |
-| **AWS EC2** | ⭐⭐⭐ | $5~     | t3.micro + Nginx 리버스 프록시                    |
+## 카카오톡 i 오픈빌더 연동 가이드
 
-> 예: `https://your-server.railway.app`
+### 전체 흐름
 
-### 📌 Step 2 — 카카오톡 채널 생성
+```
+[카카오톡 사용자] → [카카오 i 오픈빌더 스킬] → [백엔드 /api/kakao/chat] → [멀티 에이전트] → [응답]
+```
 
-1. [카카오톡 채널 관리자센터](https://center-pf.kakao.com) 접속
-2. **새 채널 만들기** → 채널 이름: "Edu-Sync AI 멘토" (자유)
-3. 채널을 **공개**로 설정
+### Step 1 — 공개 URL 확보
 
-### 📌 Step 3 — 카카오 i 오픈빌더 설정
+카카오 오픈빌더는 공개 HTTPS URL이 필요합니다.
 
-1. [카카오 i 오픈빌더](https://chatbot.kakao.com) 접속
-2. **새 봇 만들기** → 위에서 만든 채널 연결
-3. **스킬** 탭 → **스킬 생성**:
-   - 스킬 이름: `AI 멘토 데스크`
-   - URL: `https://your-server.com/api/kakao/webhook`
-   - Method: POST
-4. **시나리오** → **폴백 블록** 선택
-5. 폴백 블록의 **봇 응답**에서 → 스킬데이터 → 위에서 만든 `AI 멘토 데스크` 스킬 선택
-6. **(선택)** 보충 수업 예약 블록 추가:
-   - 새 블록 생성 → 패턴 발화: "보충 수업", "조교 예약"
-   - 봇 응답 → 스킬데이터 → URL: `/api/kakao/webhook/schedule`
-7. **배포** 탭 → 배포 실행
+| 방법        | 난이도 | 비용    | 설명                                        |
+| ----------- | ------ | ------- | ------------------------------------------- |
+| **ngrok**   | ⭐     | 무료    | `ngrok http 5060` → 임시 HTTPS URL (개발용) |
+| **Railway** | ⭐⭐   | 무료~$5 | GitHub 연결 → 자동 배포                     |
+| **Render**  | ⭐⭐   | 무료    | Python Web Service                          |
 
-### 📌 Step 4 — 테스트
+```bash
+# ngrok 예시
+ngrok http 5060
+# → https://xxxx-xx-xx.ngrok-free.app
+```
+
+### Step 2 — 카카오톡 채널 생성
+
+1. [카카오톡 채널 관리자센터](https://center-pf.kakao.com) → **새 채널 만들기**
+2. 채널명: "Edu-Sync AI" (자유)
+3. **공개** 설정
+
+### Step 3 — 카카오 i 오픈빌더 설정
+
+1. [카카오 i 오픈빌더](https://chatbot.kakao.com) → **새 봇 만들기** → 채널 연결
+2. **스킬** 탭 → 스킬 생성:
+   - 이름: `Edu-Sync AI`
+   - URL: `https://your-domain.com/api/kakao/chat`
+   - Method: `POST`
+3. **시나리오** → **폴백 블록** → 봇 응답 → 스킬데이터 → 위 스킬 선택
+4. **배포** → 실행
+
+### Step 4 — 테스트
 
 1. 카카오톡에서 채널 검색 → 채팅 시작
-2. "취업 자료 좀요" 입력 → AI가 선택지(QuickReply) 제공
-3. "🙋‍♂️ 멘토 상담 요청" 탭 → 대기열 등록 확인
-4. 웹 대시보드(`localhost:3000`)에서 멘토 대기열에 표시되는지 확인
+2. "취업 자료 좀요" → AI 응답 + QuickReply 제공
+3. 웹 대시보드에서 멘토 대기열 확인
 
----
+### 웹훅 요청/응답 형식
 
-## 7. 카카오 Webhook 응답 형식 (참고)
+**요청** (카카오 → 서버):
 
-우리 서버는 카카오 i 오픈빌더의 **SkillResponse** 형식으로 응답합니다:
+```json
+{
+  "userRequest": {
+    "utterance": "취업 정보 알려줘",
+    "user": { "id": "kakao_user_id" }
+  }
+}
+```
+
+**응답** (서버 → 카카오):
 
 ```json
 {
   "version": "2.0",
   "template": {
-    "outputs": [
-      { "simpleText": { "text": "어떤 취업 자료를 찾고 계신가요?" } }
-    ],
+    "outputs": [{ "simpleText": { "text": "AI 응답 내용..." } }],
     "quickReplies": [
       {
-        "label": "📄 포트폴리오 양식",
+        "label": "📄 포트폴리오",
         "action": "message",
-        "messageText": "📄 포트폴리오 양식"
-      },
-      {
-        "label": "📋 채용 공고",
-        "action": "message",
-        "messageText": "📋 채용 공고"
-      },
-      {
-        "label": "🙋‍♂️ 멘토 상담 요청",
-        "action": "message",
-        "messageText": "멘토님과 직접 상담하기"
+        "messageText": "포트폴리오 양식"
       }
     ]
   }
 }
 ```
 
+### (선택) 카카오 OAuth 로그인
+
+1. [Kakao Developers](https://developers.kakao.com) → 앱 등록
+2. **카카오 로그인** 활성화 + Redirect URI 등록
+3. `.env`에 `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` 추가
+
 ---
 
-## 8. 프로덕션 고려사항
+## API 엔드포인트
 
-| 현재 (데모)           | 프로덕션 권장             |
-| --------------------- | ------------------------- |
-| JSON File Store       | PostgreSQL + Redis        |
-| FAISS (CPU)           | Pinecone / Weaviate       |
-| GPT-4o-mini 단일 모델 | 비용 최적화 모델 분기     |
-| 단일 서버             | Docker Compose + Nginx    |
-| 인증 없음             | JWT + 역할 기반 접근 제어 |
+| Method   | Endpoint                              | 설명                    |
+| -------- | ------------------------------------- | ----------------------- |
+| `POST`   | `/api/auth/demo`                      | 데모 로그인             |
+| `POST`   | `/api/auth/qr/generate`               | QR 로그인 토큰 생성     |
+| `GET`    | `/api/auth/qr/check`                  | QR 폴링 확인            |
+| `POST`   | `/api/chat`                           | 웹 챗봇 (멀티 에이전트) |
+| `POST`   | `/api/kakao/chat`                     | 카카오톡 웹훅           |
+| `GET`    | `/api/ta/slots`                       | TA 슬롯 목록            |
+| `POST`   | `/api/ta/slots/recurring`             | 반복 슬롯 일괄 생성     |
+| `DELETE` | `/api/ta/slots/{id}`                  | 슬롯 삭제               |
+| `GET`    | `/api/ta/briefing/{id}`               | AI 브리핑 리포트        |
+| `GET`    | `/api/mentor/queue`                   | 상담 대기 큐            |
+| `POST`   | `/api/mentor/queue/{id}/resolve`      | 상담 해결               |
+| `POST`   | `/api/mentor/invite`                  | 초대 코드 생성          |
+| `GET`    | `/api/mentor/students/by-mentor/{id}` | 멘토별 수강생           |
+| `GET`    | `/api/mentor/student/{id}/timeline`   | 수강생 타임라인         |
+| `GET`    | `/api/curation/today`                 | 오늘의 큐레이션         |
+| `POST`   | `/api/curation`                       | 큐레이션 등록           |
+| `POST`   | `/api/knowledge/upload`               | PDF 업로드              |
+| `GET`    | `/api/knowledge/documents`            | 문서 목록               |
+| `POST`   | `/api/knowledge/rebuild`              | 벡터스토어 재빌드       |
+| `GET`    | `/api/health`                         | 서버 상태               |
+
+---
+
+## 큐레이션 일정
+
+| 요일   | 카테고리              |
+| ------ | --------------------- |
+| 월요일 | 채용 정보             |
+| 화요일 | IT 뉴스 / 기술 트렌드 |
+| 수요일 | 자격증 / 공모전       |
+| 목요일 | 학습 자료             |
+| 금요일 | 주간 리뷰 / 종합      |
+
+학원에서 PDF를 해당 요일에 업로드 → 시스템이 자동으로 FAISS 큐레이션 벡터스토어에 인덱싱 → 학생 질문에 시맨틱 검색으로 매칭
+
+---
+
+## 프로덕션 고려사항
+
+| 현재 (데모)      | 프로덕션 권장          |
+| ---------------- | ---------------------- |
+| JSON File Store  | PostgreSQL + Redis     |
+| FAISS (CPU)      | Pinecone / Weaviate    |
+| GPT-4o-mini 단일 | 비용 최적화 모델 분기  |
+| 단일 서버        | Docker Compose + Nginx |
+
+---
+
+## 라이선스
+
+MIT License

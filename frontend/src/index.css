@@ -13,6 +13,8 @@ body {
     "Pretendard Variable", "Pretendard", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: #f8fafc;
+  color: #1e293b;
 }
 
 /* 스크롤바 커스터마이즈 */

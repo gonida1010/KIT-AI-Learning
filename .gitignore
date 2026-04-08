@@ -2,17 +2,36 @@
 node_modules/
 venv/
 __pycache__/
+*.pyc
 
 # Environment
 .env
 !.env.example
 
-# Vector store (auto-generated)
-backend/vectorstore/
+# Vector stores (auto-generated from PDF)
+vectorstore/
+vectorstore_curation/
 
 # Build output
 frontend/dist/
 
+# Data (PDF files - large binaries)
+backend/data/*.pdf
+
+# DB runtime
+backend/db/*.json
+
+# Logs
+logs/
+*.log
+
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
