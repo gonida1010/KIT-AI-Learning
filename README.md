@@ -30,7 +30,8 @@ OPENAI_MODEL=gpt-4o-mini
 LLM_PROVIDER=openai
 EMBEDDING_PROVIDER=openai
 KAKAO_REST_API_KEY=...
-KAKAO_REDIRECT_URI=http://localhost:3000
+KAKAO_CLIENT_SECRET=...
+KAKAO_REDIRECT_URI=http://localhost:3000/oauth/callback
 FRONTEND_URL=http://localhost:3000
 CORS_ALLOW_ORIGINS=http://localhost:3000
 ```
@@ -40,7 +41,7 @@ CORS_ALLOW_ORIGINS=http://localhost:3000
 ```powershell
 cd c:\Pyg\Projects\KIT\KIT-AI-Learning\backend
 .\venv\Scripts\Activate.ps1
-uvicorn main:app --host 0.0.0.0 --port 5060 --reload
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### 5. 프론트엔드 실행
@@ -54,7 +55,7 @@ npm run dev
 ### 6. 확인 주소
 
 - 프론트엔드: `http://localhost:3000`
-- 백엔드 헬스체크: `http://localhost:5060/api/health`
+- 백엔드 헬스체크: `http://localhost:8001/api/health`
 
 ### 7. 자동 생성 항목
 
@@ -218,6 +219,7 @@ npm run dev
 
 ```env
 KAKAO_REST_API_KEY=발급받은_REST_API_키
+KAKAO_CLIENT_SECRET=플랫폼_키_설정에서_발급한_클라이언트_시크릿
 ```
 
 ### 2. 카카오 로그인 활성화
@@ -239,12 +241,14 @@ KAKAO_REST_API_KEY=발급받은_REST_API_키
 로컬 예시:
 
 ```env
+KAKAO_CLIENT_SECRET=카카오_플랫폼_키_설정의_클라이언트_시크릿
 KAKAO_REDIRECT_URI=http://localhost:3000/oauth/callback
 ```
 
 운영 예시:
 
 ```env
+KAKAO_CLIENT_SECRET=카카오_플랫폼_키_설정의_클라이언트_시크릿
 KAKAO_REDIRECT_URI=https://your-frontend-domain.com/oauth/callback
 ```
 
@@ -260,6 +264,7 @@ OPENAI_MODEL=gpt-4o-mini
 LLM_PROVIDER=openai
 EMBEDDING_PROVIDER=openai
 KAKAO_REST_API_KEY=발급받은_REST_API_키
+KAKAO_CLIENT_SECRET=카카오_플랫폼_키_설정의_클라이언트_시크릿
 KAKAO_REDIRECT_URI=http://localhost:3000/oauth/callback
 FRONTEND_URL=http://localhost:3000
 CORS_ALLOW_ORIGINS=http://localhost:3000
@@ -269,6 +274,7 @@ CORS_ALLOW_ORIGINS=http://localhost:3000
 
 ```env
 KAKAO_REST_API_KEY=발급받은_REST_API_키
+KAKAO_CLIENT_SECRET=카카오_플랫폼_키_설정의_클라이언트_시크릿
 KAKAO_REDIRECT_URI=https://your-frontend-domain.com/oauth/callback
 FRONTEND_URL=https://your-frontend-domain.com
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.com
@@ -308,7 +314,7 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.com
 로컬에서 임시 테스트만 하려면 예를 들어 `ngrok`을 쓸 수 있습니다.
 
 ```powershell
-ngrok http 5060
+ngrok http 8001
 ```
 
 그러면 예시 주소가 아래처럼 생성됩니다.
@@ -448,17 +454,18 @@ https://your-domain.com/api/kakao/webhook/curation?category=자격증·공모전
 ### 11. 배포 직전 최종 체크리스트
 
 1. `backend/.env` 의 `KAKAO_REST_API_KEY` 입력 완료
-2. `backend/.env` 의 `KAKAO_REDIRECT_URI` 가 실제 프론트 주소와 일치
-3. `CORS_ALLOW_ORIGINS` 에 실제 프론트 주소가 포함됨
-4. 백엔드 HTTPS 주소가 외부에서 접근 가능
-5. 오픈빌더 스킬 URL 3개가 모두 저장됨
-6. 카카오톡 채널과 오픈빌더 봇 연결 완료
-7. 일반 질의 테스트 완료
-8. 멘토 상담 요청 테스트 완료
-9. 조교 예약 Quick Reply 테스트 완료
-10. 조교 대시보드 반영 테스트 완료
-11. 큐레이션 조회 테스트 완료
-12. 실제 채널 배포 후 최종 실사용 테스트 완료
+2. `backend/.env` 의 `KAKAO_CLIENT_SECRET` 입력 완료 또는 카카오 콘솔에서 클라이언트 시크릿 비활성화
+3. `backend/.env` 의 `KAKAO_REDIRECT_URI` 가 실제 프론트 주소와 일치
+4. `CORS_ALLOW_ORIGINS` 에 실제 프론트 주소가 포함됨
+5. 백엔드 HTTPS 주소가 외부에서 접근 가능
+6. 오픈빌더 스킬 URL 3개가 모두 저장됨
+7. 카카오톡 채널과 오픈빌더 봇 연결 완료
+8. 일반 질의 테스트 완료
+9. 멘토 상담 요청 테스트 완료
+10. 조교 예약 Quick Reply 테스트 완료
+11. 조교 대시보드 반영 테스트 완료
+12. 큐레이션 조회 테스트 완료
+13. 실제 채널 배포 후 최종 실사용 테스트 완료
 
 ## 운영 전 체크 포인트
 

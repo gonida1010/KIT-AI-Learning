@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
+KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET", "")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://localhost:3000/oauth/callback")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
@@ -59,19 +60,24 @@ async def kakao_callback(req: KakaoCallbackReq):
     if not KAKAO_REST_API_KEY:
         raise HTTPException(500, "KAKAO_REST_API_KEY 미설정")
 
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_REST_API_KEY,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": req.code,
+    }
+    if KAKAO_CLIENT_SECRET:
+        token_payload["client_secret"] = KAKAO_CLIENT_SECRET
+
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
             "https://kauth.kakao.com/oauth/token",
-            data={
-                "grant_type": "authorization_code",
-                "client_id": KAKAO_REST_API_KEY,
-                "redirect_uri": KAKAO_REDIRECT_URI,
-                "code": req.code,
-            },
+            data=token_payload,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     if token_res.status_code != 200:
-        raise HTTPException(400, "카카오 토큰 발급 실패")
+        token_error = token_res.json().get("error_description", "") if "application/json" in token_res.headers.get("content-type", "") else token_res.text
+        raise HTTPException(400, token_error or "카카오 토큰 발급 실패")
     access_token = token_res.json().get("access_token")
     if not access_token:
         raise HTTPException(400, "Access Token 누락")

@@ -62,9 +62,13 @@ export default function LoginPage({ oauthCode }) {
   const [tab, setTab] = useState("kakao");
   const [error, setError] = useState("");
   const [processing, setProcessing] = useState(false);
+  const handledOauthCodeRef = useRef(null);
 
   useEffect(() => {
     if (!oauthCode) return;
+    if (handledOauthCodeRef.current === oauthCode) return;
+
+    handledOauthCodeRef.current = oauthCode;
     setProcessing(true);
     const invite = localStorage.getItem("edu_sync_invite");
     login(oauthCode, invite)
@@ -73,6 +77,7 @@ export default function LoginPage({ oauthCode }) {
         localStorage.removeItem("edu_sync_invite");
       })
       .catch((e) => {
+        handledOauthCodeRef.current = null;
         setError(e.message);
         setProcessing(false);
       });
