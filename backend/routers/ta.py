@@ -22,6 +22,28 @@ class RecurringSlotRequest(BaseModel):
     start_time: str           # "14:00"
     end_time: str             # "15:00"
     weeks: int = 4            # 몇 주간 생성
+    slot_type: str = "available"
+    unavailable_reason: str | None = None
+
+
+class BulkSlotRequest(BaseModel):
+    ta_id: str
+    ta_name: str
+    start_date: str
+    end_date: str
+    weekdays: list[int]
+    start_time: str
+    end_time: str
+    slot_type: str = "available"
+    unavailable_reason: str | None = None
+
+
+class BaseScheduleRequest(BaseModel):
+    ta_id: str
+    ta_name: str
+    start_date: str
+    end_date: str
+    weekdays: list[int]
 
 
 @router.get("/slots")
@@ -112,7 +134,9 @@ async def add_recurring_slots(req: RecurringSlotRequest):
                 "date": date_str,
                 "start_time": req.start_time,
                 "end_time": req.end_time,
-                "is_available": True,
+                "slot_type": req.slot_type,
+                "unavailable_reason": req.unavailable_reason,
+                "is_available": req.slot_type == "available",
                 "booked_by": None,
                 "booked_by_name": None,
                 "booking_description": None,
@@ -124,12 +148,102 @@ async def add_recurring_slots(req: RecurringSlotRequest):
     return {"status": "ok", "created_count": len(created), "slots": created}
 
 
+@router.post("/slots/bulk")
+async def add_bulk_slots(req: BulkSlotRequest):
+    start = datetime.strptime(req.start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(req.end_date, "%Y-%m-%d").date()
+    if end < start:
+        raise HTTPException(400, "종료 날짜는 시작 날짜보다 빠를 수 없습니다.")
+
+    created = []
+    current = start
+    while current <= end:
+        weekday = current.weekday()
+        if weekday in req.weekdays:
+            date_str = current.strftime("%Y-%m-%d")
+            exists = any(
+                s["ta_id"] == req.ta_id
+                and s["date"] == date_str
+                and s["start_time"] == req.start_time
+                and s["end_time"] == req.end_time
+                for s in store.schedules
+            )
+            if not exists:
+                slot = {
+                    "id": _uid(),
+                    "ta_id": req.ta_id,
+                    "ta_name": req.ta_name,
+                    "date": date_str,
+                    "start_time": req.start_time,
+                    "end_time": req.end_time,
+                    "slot_type": req.slot_type,
+                    "unavailable_reason": req.unavailable_reason,
+                    "is_available": req.slot_type == "available",
+                    "booked_by": None,
+                    "booked_by_name": None,
+                    "booking_description": None,
+                    "briefing_report": None,
+                }
+                store.add_ta_slot(slot)
+                created.append(slot)
+        current += timedelta(days=1)
+
+    return {"status": "ok", "created_count": len(created), "slots": created}
+
+
+@router.post("/slots/base-template")
+async def add_base_template_slots(req: BaseScheduleRequest):
+    start = datetime.strptime(req.start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(req.end_date, "%Y-%m-%d").date()
+    if end < start:
+        raise HTTPException(400, "종료 날짜는 시작 날짜보다 빠를 수 없습니다.")
+
+    created = []
+    current = start
+    while current <= end:
+        weekday = current.weekday()
+        if weekday in req.weekdays:
+            date_str = current.strftime("%Y-%m-%d")
+            for hour in range(9, 22):
+                start_time = f"{hour:02d}:00"
+                end_time = f"{hour + 1:02d}:00"
+                exists = any(
+                    s["ta_id"] == req.ta_id
+                    and s["date"] == date_str
+                    and s["start_time"] == start_time
+                    and s["end_time"] == end_time
+                    for s in store.schedules
+                )
+                if exists:
+                    continue
+                slot = {
+                    "id": _uid(),
+                    "ta_id": req.ta_id,
+                    "ta_name": req.ta_name,
+                    "date": date_str,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "slot_type": "available",
+                    "unavailable_reason": None,
+                    "is_available": True,
+                    "booked_by": None,
+                    "booked_by_name": None,
+                    "booking_description": None,
+                    "briefing_report": None,
+                }
+                store.add_ta_slot(slot)
+                created.append(slot)
+        current += timedelta(days=1)
+
+    return {"status": "ok", "created_count": len(created), "slots": created}
+
+
 @router.delete("/slots/{slot_id}")
 async def delete_slot(slot_id: str):
     """슬롯 삭제 (예약되지 않은 슬롯만)."""
     for i, s in enumerate(store.schedules):
         if s["id"] == slot_id:
-            if not s["is_available"]:
+            if s.get("booked_by"):
                 raise HTTPException(400, "이미 예약된 슬롯은 삭제할 수 없습니다.")
             store.schedules.pop(i)
             store._save()

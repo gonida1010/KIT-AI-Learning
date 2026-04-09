@@ -5,8 +5,10 @@ import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import StudentChat from "./pages/StudentChat";
 import MentorDashboard from "./pages/MentorDashboard";
+import MentorStudents from "./pages/MentorStudents";
 import TADashboard from "./pages/TADashboard";
 import KnowledgeBase from "./pages/KnowledgeBase";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function QRApprove({ qrToken }) {
   const { user } = useAuth();
@@ -78,6 +80,7 @@ export default function App() {
       if (user.role === "student") setPage("chat");
       else if (user.role === "mentor") setPage("mentor");
       else if (user.role === "ta") setPage("ta");
+      else if (user.role === "admin") setPage("admin");
     }
   }, [user]);
 
@@ -96,11 +99,14 @@ export default function App() {
     student: { chat: <StudentChat /> },
     mentor: {
       mentor: <MentorDashboard />,
+      students: <MentorStudents />,
       knowledge: <KnowledgeBase />,
     },
     ta: {
       ta: <TADashboard />,
-      knowledge: <KnowledgeBase />,
+    },
+    admin: {
+      admin: <AdminDashboard />,
     },
   };
   const pages = rolePages[user.role] || rolePages.student;

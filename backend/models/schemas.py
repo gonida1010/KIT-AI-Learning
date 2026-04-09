@@ -55,6 +55,8 @@ class TASlot(BaseModel):
     date: str
     start_time: str
     end_time: str
+    slot_type: str = "available"
+    unavailable_reason: str | None = None
     is_available: bool = True
     booked_by: str | None = None
     booked_by_name: str | None = None

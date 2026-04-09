@@ -210,7 +210,7 @@ async def update_role(token: str = "", role: str = ""):
     user_id = store.get_session(token)
     if not user_id:
         raise HTTPException(401, "유효하지 않은 세션")
-    if role not in ("student", "mentor", "ta"):
+    if role not in ("student", "mentor", "ta", "admin"):
         raise HTTPException(400, "유효하지 않은 역할")
     user = store.get_user(user_id)
     if not user:
@@ -250,9 +250,9 @@ async def link_mentor(req: LinkMentorReq, token: str = ""):
 # ── 데모 로그인 ──────────────────────────────────────────
 @router.post("/demo")
 async def demo_login(role: str = "student"):
-    if role not in ("student", "mentor", "ta"):
+    if role not in ("student", "mentor", "ta", "admin"):
         raise HTTPException(400, "유효하지 않은 역할")
-    demo_users = {"student": "student_001", "mentor": "mentor_001", "ta": "ta_jung"}
+    demo_users = {"student": "student_001", "mentor": "mentor_001", "ta": "ta_jung", "admin": "admin_001"}
     uid = demo_users.get(role, "student_001")
     user = store.get_user(uid)
     if not user:

@@ -109,7 +109,11 @@ async def chat(req: ChatRequest):
         "id": _uid(), "user_id": sid, "channel": "web",
         "role": "assistant", "agent_type": agent_type,
         "content": content, "choices": choices or None,
-        "metadata": {"routing": routing},
+        "metadata": {
+            "routing": routing,
+            "curation_items": curation_items,
+            "related_materials": ai_result.get("related_materials", []),
+        },
         "created_at": _now(),
     }
     store.add_message(sid, assistant_msg)
@@ -129,6 +133,7 @@ async def chat(req: ChatRequest):
         "reply": content,
         "choices": choices,
         "curation_items": curation_items,
+        "related_materials": ai_result.get("related_materials", []),
         "needs_handoff": needs_handoff,
         "agent_type": agent_type,
     }

@@ -1,15 +1,21 @@
 import { useAuth } from "../contexts/AuthContext";
-import { MessageSquare, Users, BookOpen, Calendar, LogOut } from "lucide-react";
+import {
+  Users,
+  BookOpen,
+  Calendar,
+  LogOut,
+  Shield,
+  ContactRound,
+} from "lucide-react";
 
 const NAV = {
   mentor: [
     { key: "mentor", label: "대시보드", Icon: Users },
+    { key: "students", label: "수강생 관리", Icon: ContactRound },
     { key: "knowledge", label: "지식 베이스", Icon: BookOpen },
   ],
-  ta: [
-    { key: "ta", label: "스케줄", Icon: Calendar },
-    { key: "knowledge", label: "지식 베이스", Icon: BookOpen },
-  ],
+  ta: [{ key: "ta", label: "스케줄", Icon: Calendar }],
+  admin: [{ key: "admin", label: "관리자 대시보드", Icon: Shield }],
 };
 
 export default function Sidebar({ current, onNavigate }) {
@@ -61,7 +67,11 @@ export default function Sidebar({ current, onNavigate }) {
               {user?.name}
             </p>
             <p className="text-xs text-slate-400">
-              {user?.role === "mentor" ? "멘토" : "TA"}
+              {user?.role === "mentor"
+                ? "멘토"
+                : user?.role === "admin"
+                  ? "관리자"
+                  : "TA"}
             </p>
           </div>
         </div>

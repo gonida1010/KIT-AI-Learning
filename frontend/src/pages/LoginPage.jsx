@@ -210,6 +210,12 @@ export default function LoginPage({ oauthCode }) {
                   label: "TA (조교)",
                   desc: "스케줄 관리",
                 },
+                {
+                  role: "admin",
+                  emoji: "🛡️",
+                  label: "관리자",
+                  desc: "전체 시스템 관리",
+                },
               ].map(({ role, emoji, label, desc }) => (
                 <button
                   key={role}

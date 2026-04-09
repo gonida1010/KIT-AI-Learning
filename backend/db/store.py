@@ -37,6 +37,7 @@ class Store:
 
         # ── Knowledge & Curation ──
         self.knowledge_docs: list[dict] = []
+        self.mentor_docs: list[dict] = []
         self.curation_items: list[dict] = []
 
         # ── Student tracking ──
@@ -57,6 +58,7 @@ class Store:
                 self.handoff_queue = d.get("handoff_queue", [])
                 self.schedules = d.get("schedules", [])
                 self.knowledge_docs = d.get("knowledge_docs", [])
+                self.mentor_docs = d.get("mentor_docs", [])
                 self.curation_items = d.get("curation_items", [])
                 self.student_events = d.get("student_events", {})
                 if self.users:
@@ -77,6 +79,7 @@ class Store:
                     "handoff_queue": self.handoff_queue,
                     "schedules": self.schedules,
                     "knowledge_docs": self.knowledge_docs,
+                    "mentor_docs": self.mentor_docs,
                     "curation_items": self.curation_items,
                     "student_events": self.student_events,
                 },
@@ -92,6 +95,7 @@ class Store:
         now = datetime.now()
         yesterday = now - timedelta(days=1)
 
+        admin_id = "admin_001"
         mentor_id = "mentor_001"
         ta1_id = "ta_jung"
         ta2_id = "ta_han"
@@ -100,6 +104,12 @@ class Store:
 
         # ── Users ──
         self.users = {
+            admin_id: {
+                "id": admin_id, "kakao_id": None, "name": "최관리자",
+                "profile_image": "", "role": "admin",
+                "mentor_id": None, "invite_code": None,
+                "career_pref": None, "created_at": _now(),
+            },
             mentor_id: {
                 "id": mentor_id, "kakao_id": None, "name": "이강민",
                 "profile_image": "", "role": "mentor",
@@ -248,6 +258,7 @@ class Store:
 
         # ── Knowledge docs (sample) ──
         self.knowledge_docs = []
+        self.mentor_docs = []
 
         # ── 큐레이션 콘텐츠 (5주 분량) ──
         self.curation_items = self._build_curation_seed(now)
@@ -736,14 +747,22 @@ class Store:
 
     # ━━━━━━━━━━━━━━━━━━━━ TA Schedules ━━━━━━━━━━━━━━━━━━━
     def get_available_slots(self) -> list[dict]:
-        return [s for s in self.schedules if s["is_available"]]
+        return [
+            s
+            for s in self.schedules
+            if s.get("slot_type", "available") == "available" and s["is_available"]
+        ]
 
     def get_all_slots(self) -> list[dict]:
         return self.schedules
 
     def book_slot(self, slot_id, student_id, student_name, desc, briefing=None):
         for s in self.schedules:
-            if s["id"] == slot_id and s["is_available"]:
+            if (
+                s["id"] == slot_id
+                and s["is_available"]
+                and s.get("slot_type", "available") == "available"
+            ):
                 s.update(is_available=False, booked_by=student_id,
                          booked_by_name=student_name,
                          booking_description=desc, briefing_report=briefing)
@@ -789,6 +808,90 @@ class Store:
                 self._save()
                 return True
         return False
+
+    # ━━━━━━━━━━━━━━━━━ Mentor docs ━━━━━━━━━━━━━━━━━━━━━━
+    def add_mentor_doc(self, doc: dict):
+        self.mentor_docs.append(doc)
+        self._save()
+
+    def get_mentor_docs(self, mentor_id: str, query: str | None = None) -> list[dict]:
+        docs = [d for d in self.mentor_docs if d.get("mentor_id") == mentor_id]
+        if query:
+            q = query.lower()
+            docs = [
+                d
+                for d in docs
+                if q in (d.get("digest_title") or "").lower()
+                or q in (d.get("digest_summary") or "").lower()
+                or q in (d.get("filename") or "").lower()
+            ]
+        return sorted(docs, key=lambda x: x.get("uploaded_at", ""), reverse=True)
+
+    def get_mentor_doc(self, mentor_doc_id: str) -> dict | None:
+        for doc in self.mentor_docs:
+            if doc.get("id") == mentor_doc_id:
+                return doc
+        return None
+
+    def remove_mentor_doc(self, mentor_id: str, mentor_doc_id: str) -> dict | None:
+        for i, doc in enumerate(self.mentor_docs):
+            if doc.get("id") == mentor_doc_id and doc.get("mentor_id") == mentor_id:
+                removed = self.mentor_docs.pop(i)
+                self._save()
+                return removed
+        return None
+
+    def get_recent_chat_activity(self, mentor_id: str, hours: int = 24) -> list[dict]:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        student_ids = {u["id"] for u in self.get_students_by_mentor(mentor_id)}
+        items: list[dict] = []
+
+        for student_id in student_ids:
+            conversation = self.chat_logs.get(student_id, [])
+            student = self.get_user(student_id) or {"name": student_id}
+            for index, message in enumerate(conversation):
+                if message.get("role") != "user":
+                    continue
+                created_at = message.get("created_at", "")
+                if not created_at:
+                    continue
+                try:
+                    timestamp = datetime.fromisoformat(created_at)
+                except ValueError:
+                    continue
+                if timestamp < cutoff:
+                    continue
+
+                assistant = next(
+                    (
+                        entry
+                        for entry in conversation[index + 1 :]
+                        if entry.get("role") == "assistant"
+                    ),
+                    None,
+                )
+                metadata = (assistant or {}).get("metadata") or {}
+                sent_materials = [
+                    item.get("digest_title") or item.get("title") or item.get("filename")
+                    for item in metadata.get("related_materials", [])
+                ]
+                sent_materials.extend(
+                    item.get("title")
+                    for item in metadata.get("curation_items", [])
+                    if item.get("title")
+                )
+
+                items.append(
+                    {
+                        "student_id": student_id,
+                        "student_name": student.get("name", student_id),
+                        "timestamp": created_at,
+                        "question": message.get("content", "")[:120],
+                        "sent_materials": sent_materials[:6],
+                    }
+                )
+
+        return sorted(items, key=lambda x: x.get("timestamp", ""), reverse=True)
 
     # ━━━━━━━━━━━━━━━━━━ Curation ━━━━━━━━━━━━━━━━━━━━━━━━━
     def add_curation(self, item: dict):

@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 
 from services.llm_provider import LLMProvider, extract_json
-from services.rag import search_curation_vectorstore
+from services.rag import search_curation_vectorstore, search_mentor_vectorstore
 from db.store import store
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ AGENT_A_PROMPT = """\
 [큐레이션 정보]
 {curation}
 
+[멘토 전용 자료]
+{mentor_materials}
+
 [응답 규칙]
 1. 질문이 모호하면 3~4개의 구체적 선택지를 제시하세요.
 2. 구체적 질문에는 즉시 답변하고 관련 자료가 있으면 안내하세요.
@@ -47,12 +50,40 @@ AGENT_A_PROMPT = """\
   ],
   "needs_handoff": false,
   "related_docs": ["관련 자료명"],
-  "curation_refs": ["참조 큐레이션 ID"]
+    "curation_refs": ["참조 큐레이션 ID"],
+    "mentor_doc_refs": ["멘토 자료 ID"]
 }}
 
 - choices 불필요 시 빈 배열 [].
 - needs_handoff true 시 감정적 상담 필요.
 """
+
+
+def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, list[dict]]:
+    if not user_id:
+        return "(멘토 전용 자료 없음)", []
+
+    user = store.get_user(user_id)
+    mentor_id = (user or {}).get("mentor_id")
+    if not mentor_id:
+        return "(연결된 멘토 없음)", []
+
+    results = search_mentor_vectorstore(mentor_id, message, k=3)
+    if not results:
+        return "(유사한 멘토 전용 자료 없음)", []
+
+    docs = []
+    lines = []
+    for result in results:
+        mentor_doc = store.get_mentor_doc(result.get("mentor_doc_id", ""))
+        if not mentor_doc:
+            continue
+        docs.append(mentor_doc)
+        lines.append(
+            f"[{mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}]\n"
+            f"요약: {mentor_doc.get('digest_summary', '')}"
+        )
+    return "\n\n".join(lines) if lines else "(유사한 멘토 전용 자료 없음)", docs
 
 
 # ── LLM 기반 큐레이션 의도 분석 프롬프트 ───────────────────
@@ -166,11 +197,13 @@ async def handle_agent_a(
         rag_ctx = "\n\n".join(d.page_content for d in docs)
 
     curation_ctx, curation_matched = await _search_curations_semantic(message, llm)
+    mentor_material_ctx, mentor_materials = _search_mentor_materials(user_id, message)
 
     prompt = AGENT_A_PROMPT.format(
         context=rag_ctx
         or "(지식 베이스가 비어 있습니다. 일반 KDT 지식으로 답변하세요.)",
         curation=curation_ctx,
+        mentor_materials=mentor_material_ctx,
     )
 
     try:
@@ -182,6 +215,7 @@ async def handle_agent_a(
             "needs_handoff": False,
             "related_docs": [],
             "curation_refs": [],
+            "mentor_doc_refs": [],
         }
 
     # 이벤트 기록
@@ -205,8 +239,25 @@ async def handle_agent_a(
                 "category": it["category"],
                 "date": it["date"],
                 "summary": it.get("summary", ""),
+                "attachment_url": it.get("attachment_url") or f"/api/curation/assets/{it['id']}",
             }
             for it in curation_matched[:5]
+        ]
+
+    if mentor_materials:
+        result["related_materials"] = [
+            {
+                "id": doc["id"],
+                "digest_title": doc.get("digest_title", doc.get("filename", "자료")),
+                "digest_summary": doc.get("digest_summary", ""),
+                "attachment_url": (
+                    doc.get("source_url")
+                    if doc.get("source_kind") == "link"
+                    else f"/api/mentor/knowledge/assets/{doc['id']}"
+                ),
+                "source_kind": doc.get("source_kind", "file"),
+            }
+            for doc in mentor_materials[:3]
         ]
 
     return result

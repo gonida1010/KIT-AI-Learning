@@ -6,6 +6,7 @@
 import uuid
 import logging
 from datetime import datetime
+import re
 
 from fastapi import APIRouter, Request
 
@@ -31,7 +32,11 @@ def simple_text(text: str) -> dict:
 def text_with_quick_replies(text: str, choices: list[dict], show_handoff: bool = True) -> dict:
     qr = []
     for c in choices:
-        qr.append({"messageText": c.get("label", ""), "action": "message", "label": c.get("label", "")})
+        qr.append({
+            "messageText": c.get("messageText", c.get("label", "")),
+            "action": "message",
+            "label": c.get("label", ""),
+        })
     if show_handoff:
         qr.append({"messageText": "멘토님과 직접 상담하기", "action": "message", "label": "🙋‍♂️ 멘토 상담 요청"})
     return {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": text}}], "quickReplies": qr}}
@@ -54,6 +59,9 @@ async def kakao_webhook(request: Request):
 
     if not utterance:
         return simple_text("메시지를 입력해 주세요.")
+
+    booking_match = re.match(r"^예약:(?P<slot_id>[a-f0-9]{12})$", utterance)
+    booking_desc_match = re.match(r"^예약설명:(?P<slot_id>[a-f0-9]{12}):(?P<desc>.+)$", utterance)
 
     student_id = f"kakao_{kakao_user_id}"
     if not store.get_user(student_id):
@@ -85,6 +93,60 @@ async def kakao_webhook(request: Request):
             "content": "멘토 상담 요청", "detail": (last_user_msg or utterance)[:80],
         })
         return simple_text("✅ 멘토 상담 대기열에 등록되었습니다.\n담당 멘토님이 최대한 빠르게 연락드리겠습니다.")
+
+    if booking_match:
+        slot_id = booking_match.group("slot_id")
+        slot = next((item for item in store.get_available_slots() if item.get("id") == slot_id), None)
+        if not slot:
+            return simple_text("선택한 시간이 더 이상 예약 가능하지 않습니다. 다시 확인해 주세요.")
+        return simple_text(
+            f"선택한 시간: {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}\n"
+            f"아래 형식으로 어려운 내용을 보내주세요.\n"
+            f"예약설명:{slot_id}:파이썬 클래스가 어려워요"
+        )
+
+    if booking_desc_match:
+        from main import llm_provider
+        from services.agent_b import generate_briefing_report
+
+        slot_id = booking_desc_match.group("slot_id")
+        description = booking_desc_match.group("desc").strip()
+        student = store.get_user(student_id)
+        slot = next((item for item in store.get_available_slots() if item.get("id") == slot_id), None)
+        if not slot:
+            return simple_text("선택한 시간이 더 이상 예약 가능하지 않습니다. 다시 예약 목록을 확인해 주세요.")
+
+        events = store.get_student_events(student_id)
+        keywords = [event["content"] for event in events if event["event_type"] == "search"]
+        briefing = await generate_briefing_report(
+            student_name=(student or {}).get("name", "수강생"),
+            raw_input=description,
+            search_history=keywords,
+            llm=llm_provider,
+        )
+        booked = store.book_slot(
+            slot_id=slot_id,
+            student_id=student_id,
+            student_name=(student or {}).get("name", "수강생"),
+            desc=description,
+            briefing=briefing,
+        )
+        if not booked:
+            return simple_text("예약 처리 중 시간이 마감되었습니다. 다시 시도해 주세요.")
+
+        store.add_event(student_id, {
+            "timestamp": _now(),
+            "event_type": "doc_access",
+            "content": f"조교 보충수업 예약 ({booked['ta_name']})",
+            "detail": description[:80],
+        })
+        return simple_text(
+            f"예약 완료되었습니다.\n"
+            f"- 시간: {booked['date']} {booked['start_time']}~{booked['end_time']}\n"
+            f"- 조교: {booked['ta_name']}\n"
+            f"- 공부 내용: {description}\n\n"
+            f"조교 대시보드에는 요약된 브리핑도 함께 전달됩니다."
+        )
 
     # 사용자 메시지 저장
     store.add_message(student_id, {
@@ -159,5 +221,51 @@ async def kakao_schedule_webhook(request: Request):
     lines = ["📅 예약 가능한 보충 수업 시간:\n"]
     for i, slot in enumerate(available[:5], 1):
         lines.append(f"{i}. {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}")
-    lines.append('\n원하는 번호와 어려운 내용을 함께 입력해 주세요.')
-    return simple_text("\n".join(lines))
+    lines.append('\n원하는 시간을 아래 버튼으로 누른 뒤, 어려운 내용을 한 줄로 보내주세요.')
+    return text_with_quick_replies(
+        "\n".join(lines),
+        [
+            {"label": f"{slot['date']} {slot['start_time']}", "messageText": f"예약:{slot['id']}"}
+            for slot in available[:5]
+        ],
+        show_handoff=True,
+    )
+
+
+# ── 큐레이션 조회 전용 블록 ──────────────────────────────
+@router.post("/webhook/curation")
+async def kakao_curation_webhook(request: Request, category: str = ""):
+    """카테고리별 큐레이션 정보 제공."""
+    body = await request.json()
+
+    categories = [c.strip() for c in category.split(",") if c.strip()] if category else []
+
+    if categories:
+        items = []
+        for cat in categories:
+            items.extend(store.get_curations(category=cat))
+    else:
+        items = store.curation_items
+
+    # 최신 5개만
+    items = sorted(items, key=lambda x: x.get("date", ""), reverse=True)[:5]
+
+    if not items:
+        return simple_text("해당 카테고리의 정보가 아직 없습니다.")
+
+    lines = []
+    for item in items:
+        lines.append(f"📌 [{item['category']}] {item['title']}")
+        lines.append(f"   {item['summary']}")
+        lines.append(f"   📅 {item['date']}")
+        lines.append("")
+
+    return text_with_quick_replies(
+        "\n".join(lines),
+        [
+            {"label": "📋 채용정보 더보기"},
+            {"label": "📰 IT뉴스 더보기"},
+            {"label": "🏆 자격증·공모전"},
+        ],
+        show_handoff=True,
+    )

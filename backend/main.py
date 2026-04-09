@@ -4,6 +4,7 @@ Edu-Sync AI — FastAPI 백엔드.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -47,16 +48,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Edu-Sync AI", version="3.0.0", lifespan=lifespan)
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ── 라우터 등록 ──────────────────────────────────────────
-from routers import auth, chat, kakao, mentor, ta, knowledge, curation  # noqa: E402
+from routers import auth, chat, kakao, mentor, ta, knowledge, curation, admin  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(chat.router)
@@ -65,6 +72,7 @@ app.include_router(mentor.router)
 app.include_router(ta.router)
 app.include_router(knowledge.router)
 app.include_router(curation.router)
+app.include_router(admin.router)
 
 
 @app.get("/api/health")
