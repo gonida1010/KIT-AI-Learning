@@ -182,12 +182,17 @@ export default function KnowledgeBase() {
   };
 
   const handleDelete = async (docId) => {
-    await fetch(
+    const res = await fetch(
       `/api/mentor/knowledge/${docId}?token=${encodeURIComponent(token || "")}`,
       {
         method: "DELETE",
       },
     ).catch(() => null);
+    if (!res?.ok) {
+      setError("삭제에 실패했습니다.");
+      return;
+    }
+    setDocs((prev) => prev.filter((doc) => doc.id !== docId));
     await fetchDocs();
   };
 

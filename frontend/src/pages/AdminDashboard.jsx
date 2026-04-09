@@ -11,31 +11,34 @@ const CATEGORY_OPTIONS = [
   "학습자료",
 ];
 
-function DropZone({ onFileSelect, uploading }) {
+function DropZone({ onFileSelect, uploading, disabled }) {
   const [dragging, setDragging] = useState(false);
 
   return (
     <label
       onDragOver={(event) => {
+        if (disabled) return;
         event.preventDefault();
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={(event) => {
+        if (disabled) return;
         event.preventDefault();
         setDragging(false);
         const file = event.dataTransfer.files?.[0];
         if (file) onFileSelect(file);
       }}
-      className={`flex min-h-[156px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-5 py-6 text-center transition-colors ${dragging ? "border-primary-400 bg-primary-50" : "border-slate-300 bg-slate-50"}`}
+      className={`flex min-h-[156px] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-5 py-6 text-center transition-colors ${disabled ? "cursor-not-allowed border-slate-200 bg-slate-100" : dragging ? "cursor-pointer border-primary-400 bg-primary-50" : "cursor-pointer border-slate-300 bg-slate-50"}`}
     >
       <Upload size={18} className="text-primary-500" />
       <p className="mt-3 text-sm font-semibold text-slate-700">
         파일 드래그 업로드
       </p>
       <p className="mt-1 text-xs leading-5 text-slate-500">
-        AI가 내용을 정리하고, 지정한 날짜에 멘토 대시보드와 카카오 챗봇에
-        노출합니다.
+        {disabled
+          ? "이 날짜에는 이미 자료가 있습니다. 수정 또는 삭제 후 다시 등록할 수 있습니다."
+          : "AI가 내용을 정리하고, 지정한 날짜에 멘토 대시보드와 카카오 챗봇에 노출합니다."}
       </p>
       {uploading && (
         <p className="mt-3 text-xs text-slate-400">AI 정리 중입니다...</p>
@@ -43,6 +46,7 @@ function DropZone({ onFileSelect, uploading }) {
       <input
         type="file"
         className="hidden"
+        disabled={disabled}
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) onFileSelect(file);
@@ -104,12 +108,18 @@ export default function AdminDashboard() {
 
   const uploadFile = async (file) => {
     if (!file) return;
+    if (hasItemForSelectedDate) {
+      setError(
+        "하루에는 큐레이션 자료를 1개만 등록할 수 있습니다. 기존 자료를 수정하거나 삭제해 주세요.",
+      );
+      return;
+    }
     setUploading(true);
     setError("");
     const formData = new FormData();
     formData.append("file", file);
     formData.append("category", category);
-    formData.append("date", targetDate);
+    formData.append("date", selectedDate);
 
     try {
       const res = await fetch("/api/curation/upload", {
@@ -131,6 +141,12 @@ export default function AdminDashboard() {
 
   const uploadLink = async () => {
     if (!linkValue.trim()) return;
+    if (hasItemForSelectedDate) {
+      setError(
+        "하루에는 큐레이션 자료를 1개만 등록할 수 있습니다. 기존 자료를 수정하거나 삭제해 주세요.",
+      );
+      return;
+    }
     setUploading(true);
     setError("");
     const formData = new FormData();
@@ -163,16 +179,35 @@ export default function AdminDashboard() {
       body: JSON.stringify({ category: editingCategory, date: editingDate }),
     }).catch(() => null);
     if (res?.ok) {
+      const updatedDate = editingDate;
+      const updatedCategory = editingCategory;
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                category: updatedCategory,
+                date: updatedDate,
+                weekday: new Date(`${updatedDate}T00:00:00`).getDay(),
+              }
+            : item,
+        ),
+      );
       setEditingId("");
+      setSelectedDate(updatedDate);
       await fetchItems();
-      setSelectedDate(editingDate);
     }
   };
 
   const deleteItem = async (itemId) => {
-    await fetch(`/api/curation/items/${itemId}`, { method: "DELETE" }).catch(
-      () => null,
-    );
+    const res = await fetch(`/api/curation/items/${itemId}`, {
+      method: "DELETE",
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("삭제에 실패했습니다.");
+      return;
+    }
+    setItems((prev) => prev.filter((item) => item.id !== itemId));
     await fetchItems();
   };
 
@@ -181,6 +216,7 @@ export default function AdminDashboard() {
     [items, selectedDate],
   );
   const selectedDateCount = dateItems.length;
+  const hasItemForSelectedDate = selectedDateCount >= 1;
   const selectedDateIsPast = isPastDate(selectedDate);
   const calendarDays = monthMatrix(viewYear, viewMonth);
   const itemCountByDate = useMemo(() => {
@@ -231,13 +267,28 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <DropZone onFileSelect={uploadFile} uploading={uploading} />
+              <DropZone
+                onFileSelect={uploadFile}
+                uploading={uploading}
+                disabled={hasItemForSelectedDate}
+              />
             </div>
-            {selectedDateIsPast && (
-              <p className="mt-3 text-sm text-amber-700">
-                지난 날짜는 확인만 가능하고 새 업로드는 권장하지 않습니다.
-              </p>
-            )}
+            <div className="mt-3 min-h-6 text-sm">
+              {hasItemForSelectedDate ? (
+                <p className="text-slate-500">
+                  하루에 1개만 설정할 수 있습니다. 기존 자료를 수정하거나 삭제해
+                  주세요.
+                </p>
+              ) : selectedDateIsPast ? (
+                <p className="text-amber-700">
+                  지난 날짜는 확인만 가능하고 새 업로드는 권장하지 않습니다.
+                </p>
+              ) : (
+                <p className="opacity-0">
+                  지난 날짜는 확인만 가능하고 새 업로드는 권장하지 않습니다.
+                </p>
+              )}
+            </div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
@@ -252,14 +303,17 @@ export default function AdminDashboard() {
             />
             <button
               onClick={uploadLink}
-              disabled={uploading || !linkValue.trim()}
+              disabled={
+                uploading || !linkValue.trim() || hasItemForSelectedDate
+              }
               className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               링크 등록
             </button>
             <p className="mt-4 text-sm leading-6 text-slate-500">
-              관리자 자료는 현재 선택한 날짜에 바로 연결되며, 해당 날짜에 멘토
-              대시보드와 카카오 챗봇에서 같은 자료를 사용합니다.
+              관리자 자료는 하루 1개만 설정할 수 있으며, 링크면 AI가 내용을
+              요약하고 원문 링크를 유지합니다. 첨부파일이면 AI가 내용을 정리하고
+              원문 첨부를 열어볼 수 있게 제공합니다.
             </p>
             {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
           </div>

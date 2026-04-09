@@ -23,6 +23,16 @@ class UpdateCurationRequest(BaseModel):
     date: str
 
 
+def _find_curation_by_date(target_date: str, exclude_item_id: str | None = None) -> dict | None:
+    for item in store.curation_items:
+        if item.get("date") != target_date:
+            continue
+        if exclude_item_id and item.get("id") == exclude_item_id:
+            continue
+        return item
+    return None
+
+
 @router.get("/items")
 async def list_curations(category: str | None = None, date: str | None = None):
     """큐레이션 목록 (필터 가능)."""
@@ -112,6 +122,10 @@ async def upload_curation(
     if file is None and not source_link.strip():
         raise HTTPException(400, "파일 또는 링크가 필요합니다.")
 
+    target_date = date or datetime.now().strftime("%Y-%m-%d")
+    if _find_curation_by_date(target_date):
+        raise HTTPException(400, "하루에는 큐레이션 자료를 1개만 등록할 수 있습니다. 기존 자료를 수정하거나 삭제해 주세요.")
+
     CURATION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
     attachment_kind = "link" if source_link.strip() and file is None else "file"
     file_name = ""
@@ -142,7 +156,6 @@ async def upload_curation(
     else:
         content_text = f"외부 링크 자료: {source_link.strip()}"
 
-    target_date = date or datetime.now().strftime("%Y-%m-%d")
     weekday = datetime.strptime(target_date, "%Y-%m-%d").weekday()
     ai_title, ai_summary = await _build_ai_digest(content_text, file_name or source_link)
 
@@ -208,6 +221,9 @@ async def delete_curation(item_id: str):
 
 @router.put("/items/{item_id}")
 async def update_curation(item_id: str, req: UpdateCurationRequest):
+    if _find_curation_by_date(req.date, exclude_item_id=item_id):
+        raise HTTPException(400, "해당 날짜에는 이미 다른 큐레이션 자료가 있습니다. 기존 자료를 삭제하거나 다른 날짜를 선택해 주세요.")
+
     for item in store.curation_items:
         if item["id"] == item_id:
             item["category"] = req.category

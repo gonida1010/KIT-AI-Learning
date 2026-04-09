@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import {
   Calendar,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   Info,
   RefreshCw,
@@ -72,6 +74,7 @@ function BriefingPanel({ slot }) {
 
 export default function TADashboard() {
   const { user } = useAuth();
+  const detailSectionRef = useRef(null);
   const [slots, setSlots] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
   const [notice, setNotice] = useState("");
@@ -100,24 +103,37 @@ export default function TADashboard() {
     ),
   );
   const [selectedWeekdays, setSelectedWeekdays] = useState([1, 2, 3, 4, 5]);
-  const [holidayStartDate, setHolidayStartDate] = useState(
+  const [unavailableStartDate, setUnavailableStartDate] = useState(
     fmt(
       nextMonthDate.getFullYear(),
       nextMonthDate.getMonth(),
       nextMonthDate.getDate(),
     ),
   );
-  const [holidayEndDate, setHolidayEndDate] = useState(
+  const [unavailableEndDate, setUnavailableEndDate] = useState(
     fmt(
       lastNextMonthDate.getFullYear(),
       lastNextMonthDate.getMonth(),
       lastNextMonthDate.getDate(),
     ),
   );
-  const [holidayWeekdays, setHolidayWeekdays] = useState([0, 6]);
-  const [reason, setReason] = useState("");
+  const [unavailableWeekdays, setUnavailableWeekdays] = useState([0, 6]);
+  const [breakStartTime, setBreakStartTime] = useState("12:00");
+  const [breakEndTime, setBreakEndTime] = useState("13:00");
   const [saving, setSaving] = useState(false);
   const [initializing, setInitializing] = useState(false);
+  const [showBaseScheduleForm, setShowBaseScheduleForm] = useState(false);
+  const [showUnavailableForm, setShowUnavailableForm] = useState(false);
+  const [unavailableMode, setUnavailableMode] = useState("holiday");
+
+  const hourOptions = useMemo(
+    () =>
+      Array.from(
+        { length: 14 },
+        (_, index) => `${String(9 + index).padStart(2, "0")}:00`,
+      ),
+    [],
+  );
 
   const setMessage = useCallback((message, type = "info") => {
     setNotice(message);
@@ -153,22 +169,37 @@ export default function TADashboard() {
 
   const selectedDateSlots = selectedDate ? slotsByDate[selectedDate] || [] : [];
 
+  const currentMonthSlots = useMemo(
+    () =>
+      visibleSlots.filter((slot) => {
+        const slotDate = new Date(`${slot.date}T00:00:00`);
+        return (
+          slotDate.getFullYear() === viewYear &&
+          slotDate.getMonth() === viewMonth
+        );
+      }),
+    [visibleSlots, viewMonth, viewYear],
+  );
+
   const summary = useMemo(
     () => ({
-      available: visibleSlots.filter((slot) => slotStatus(slot) === "available")
-        .length,
-      blocked: visibleSlots.filter((slot) => slotStatus(slot) === "blocked")
-        .length,
-      booked: visibleSlots.filter((slot) => slotStatus(slot) === "booked")
+      blocked: currentMonthSlots.filter(
+        (slot) => slotStatus(slot) === "blocked",
+      ).length,
+      booked: currentMonthSlots.filter((slot) => slotStatus(slot) === "booked")
         .length,
     }),
-    [visibleSlots],
+    [currentMonthSlots],
   );
 
   const cells = getMonthDays(viewYear, viewMonth);
   const selectedDateHasBlocked = selectedDateSlots.some(
     (slot) => slotStatus(slot) === "blocked",
   );
+
+  const removeSlotsLocally = useCallback((slotIds) => {
+    setSlots((prev) => prev.filter((slot) => !slotIds.includes(slot.id)));
+  }, []);
 
   const initializeBaseSchedule = async () => {
     if (!selectedWeekdays.length || !user?.id) return;
@@ -197,51 +228,72 @@ export default function TADashboard() {
         : "이미 동일한 기본 가능시간이 등록되어 있습니다.",
       "success",
     );
+    setShowBaseScheduleForm(false);
     fetchSlots();
   };
 
-  const saveHoliday = async () => {
-    if (!holidayWeekdays.length || !user?.id) return;
+  const saveUnavailable = async () => {
+    if (!unavailableWeekdays.length || !user?.id) return;
+    if (unavailableMode === "break" && breakEndTime <= breakStartTime) {
+      setMessage("휴식 시간 종료는 시작보다 늦어야 합니다.", "error");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
-    const requests = Array.from({ length: 13 }, (_, index) => {
-      const hour = 9 + index;
-      return fetch("/api/ta/slots/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ta_id: user.id,
-          ta_name: user.name,
-          start_date: holidayStartDate,
-          end_date: holidayEndDate,
-          weekdays: holidayWeekdays.map((value) => (value + 6) % 7),
-          start_time: `${String(hour).padStart(2, "0")}:00`,
-          end_time: `${String(hour + 1).padStart(2, "0")}:00`,
-          slot_type: "blocked",
-          unavailable_reason: reason || null,
-        }),
-      }).catch(() => null);
-    });
+    const startHour =
+      unavailableMode === "holiday" ? 9 : Number(breakStartTime.slice(0, 2));
+    const endHourExclusive =
+      unavailableMode === "holiday" ? 22 : Number(breakEndTime.slice(0, 2));
+    const requests = Array.from(
+      { length: Math.max(0, endHourExclusive - startHour) },
+      (_, index) => {
+        const hour = startHour + index;
+        return fetch("/api/ta/slots/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ta_id: user.id,
+            ta_name: user.name,
+            start_date: unavailableStartDate,
+            end_date: unavailableEndDate,
+            weekdays: unavailableWeekdays.map((value) => (value + 6) % 7),
+            start_time: `${String(hour).padStart(2, "0")}:00`,
+            end_time: `${String(hour + 1).padStart(2, "0")}:00`,
+            slot_type: "blocked",
+            unavailable_reason: null,
+          }),
+        }).catch(() => null);
+      },
+    );
+
     const results = await Promise.all(requests);
     setSaving(false);
     const succeeded = results.filter((response) => response?.ok).length;
     if (!succeeded) {
-      setMessage("휴무 등록에 실패했습니다.", "error");
+      setMessage("불가 시간 등록에 실패했습니다.", "error");
       return;
     }
-    setMessage("선택한 기간에 휴무 시간을 등록했습니다.", "success");
+    setMessage(
+      unavailableMode === "holiday"
+        ? "선택한 기간에 휴무 시간을 등록했습니다."
+        : "선택한 기간에 휴식 시간을 등록했습니다.",
+      "success",
+    );
+    setShowUnavailableForm(false);
     fetchSlots();
   };
 
-  const clearHolidayForDate = async () => {
+  const clearBlockedForDate = async () => {
     if (!selectedDate) return;
     const blockedSlots = (slotsByDate[selectedDate] || []).filter(
       (slot) => slotStatus(slot) === "blocked",
     );
     if (!blockedSlots.length) {
-      setMessage("선택한 날짜에 취소할 휴무가 없습니다.", "info");
+      setMessage("선택한 날짜에 취소할 불가 시간이 없습니다.", "info");
       return;
     }
+
     const results = await Promise.all(
       blockedSlots.map((slot) =>
         fetch(`/api/ta/slots/${slot.id}`, { method: "DELETE" }).catch(
@@ -250,11 +302,12 @@ export default function TADashboard() {
       ),
     );
     if (results.some((response) => !response?.ok)) {
-      setMessage("일부 휴무 취소에 실패했습니다.", "error");
+      setMessage("일부 불가 시간 취소에 실패했습니다.", "error");
       fetchSlots();
       return;
     }
-    setMessage("선택한 날짜의 휴무를 취소했습니다.", "success");
+    removeSlotsLocally(blockedSlots.map((slot) => slot.id));
+    setMessage("선택한 날짜의 불가 시간을 취소했습니다.", "success");
     fetchSlots();
   };
 
@@ -267,6 +320,7 @@ export default function TADashboard() {
       setMessage(data?.detail || "삭제에 실패했습니다.", "error");
       return;
     }
+    removeSlotsLocally([slotId]);
     setMessage("선택한 시간을 삭제했습니다.", "success");
     fetchSlots();
   };
@@ -277,8 +331,8 @@ export default function TADashboard() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">조교 스케줄</h1>
           <p className="text-sm text-slate-500">
-            기본 가능시간은 09:00-22:00, 1시간 단위로 일괄 생성하고 휴무만
-            별도로 관리합니다.
+            기본 가능시간은 09:00-22:00, 1시간 단위로 일괄 생성하고 휴무와 휴식
+            시간을 간단히 설정합니다.
           </p>
         </div>
         <button
@@ -330,13 +384,7 @@ export default function TADashboard() {
               <ChevronRight size={18} />
             </button>
           </div>
-          <div className="mb-4 grid grid-cols-3 gap-3">
-            <div className="rounded-xl bg-emerald-50 p-4 text-center">
-              <p className="text-2xl font-bold text-emerald-700">
-                {summary.available}
-              </p>
-              <p className="mt-1 text-xs text-emerald-700">예약 가능</p>
-            </div>
+          <div className="mb-4 grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-amber-50 p-4 text-center">
               <p className="text-2xl font-bold text-amber-700">
                 {summary.blocked}
@@ -388,7 +436,15 @@ export default function TADashboard() {
               return (
                 <button
                   key={dateKey}
-                  onClick={() => setSelectedDate(dateKey)}
+                  onClick={() => {
+                    setSelectedDate(dateKey);
+                    window.requestAnimationFrame(() => {
+                      detailSectionRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    });
+                  }}
                   className={`h-24 rounded-xl border p-3 text-left transition-colors ${baseClass}`}
                 >
                   <div className="text-sm font-semibold text-slate-700">
@@ -396,7 +452,7 @@ export default function TADashboard() {
                   </div>
                   <div className="mt-2 text-[11px] text-slate-500">
                     {blocked > 0
-                      ? `휴무 ${blocked}`
+                      ? `불가 ${blocked}`
                       : booked > 0
                         ? `예약 ${booked}`
                         : available > 0
@@ -422,128 +478,210 @@ export default function TADashboard() {
 
         <div className="space-y-6">
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <p className="text-sm font-semibold text-slate-700">
-              기본 가능시간 초기 설정
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              모든 생성 시간은 {DEFAULT_START_HOUR}-{DEFAULT_END_HOUR}, 1시간
-              단위로 고정됩니다.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-1 text-xs text-slate-500">시작 날짜</p>
-                <input
-                  type="date"
-                  min={today.toISOString().slice(0, 10)}
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
-                />
-              </div>
-              <div>
-                <p className="mb-1 text-xs text-slate-500">종료 날짜</p>
-                <input
-                  type="date"
-                  min={startDate}
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
-                />
-              </div>
-            </div>
-            <div className="mt-4">
-              <p className="mb-2 text-xs text-slate-500">기본 등록 요일</p>
-              <div className="flex flex-wrap gap-2">
-                {WEEKDAY_NAMES.map((day, index) => (
-                  <button
-                    key={day}
-                    onClick={() =>
-                      setSelectedWeekdays((prev) =>
-                        prev.includes(index)
-                          ? prev.filter((value) => value !== index)
-                          : [...prev, index],
-                      )
-                    }
-                    className={`rounded-full px-4 py-2 text-sm transition-colors ${selectedWeekdays.includes(index) ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
             <button
-              onClick={initializeBaseSchedule}
-              disabled={initializing || !selectedWeekdays.length}
-              className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+              onClick={() => setShowBaseScheduleForm((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:border-slate-300"
             >
-              {initializing ? "초기 설정 중..." : "기본 가능시간 초기 설정"}
+              <div>
+                <p className="text-sm font-semibold text-slate-700">
+                  기본 가능시간 초기 설정
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {DEFAULT_START_HOUR}-{DEFAULT_END_HOUR}, 1시간 단위 기본
+                  시간표 생성
+                </p>
+              </div>
+              {showBaseScheduleForm ? (
+                <ChevronUp size={18} className="text-slate-400" />
+              ) : (
+                <ChevronDown size={18} className="text-slate-400" />
+              )}
             </button>
+            {showBaseScheduleForm && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-xs text-slate-500">시작 날짜</p>
+                    <input
+                      type="date"
+                      min={today.toISOString().slice(0, 10)}
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs text-slate-500">종료 날짜</p>
+                    <input
+                      type="date"
+                      min={startDate}
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="mb-2 text-xs text-slate-500">기본 등록 요일</p>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAY_NAMES.map((day, index) => (
+                      <button
+                        key={day}
+                        onClick={() =>
+                          setSelectedWeekdays((prev) =>
+                            prev.includes(index)
+                              ? prev.filter((value) => value !== index)
+                              : [...prev, index],
+                          )
+                        }
+                        className={`rounded-full px-4 py-2 text-sm transition-colors ${selectedWeekdays.includes(index) ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={initializeBaseSchedule}
+                  disabled={initializing || !selectedWeekdays.length}
+                  className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+                >
+                  {initializing ? "초기 설정 중..." : "기본 가능시간 초기 설정"}
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
-            <p className="text-sm font-semibold text-amber-900">휴무 설정</p>
-            <p className="mt-1 text-xs text-amber-800">
-              선택한 기간과 요일에 대해 09:00-22:00 전체 시간을 휴무로
-              등록합니다.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-1 text-xs text-amber-800">시작 날짜</p>
-                <input
-                  type="date"
-                  min={today.toISOString().slice(0, 10)}
-                  value={holidayStartDate}
-                  onChange={(event) => setHolidayStartDate(event.target.value)}
-                  className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                />
-              </div>
-              <div>
-                <p className="mb-1 text-xs text-amber-800">종료 날짜</p>
-                <input
-                  type="date"
-                  min={holidayStartDate}
-                  value={holidayEndDate}
-                  onChange={(event) => setHolidayEndDate(event.target.value)}
-                  className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                />
-              </div>
-            </div>
-            <div className="mt-4">
-              <p className="mb-2 text-xs text-amber-800">휴무 적용 요일</p>
-              <div className="flex flex-wrap gap-2">
-                {WEEKDAY_NAMES.map((day, index) => (
-                  <button
-                    key={`holiday-${day}`}
-                    onClick={() =>
-                      setHolidayWeekdays((prev) =>
-                        prev.includes(index)
-                          ? prev.filter((value) => value !== index)
-                          : [...prev, index],
-                      )
-                    }
-                    className={`rounded-full px-4 py-2 text-sm transition-colors ${holidayWeekdays.includes(index) ? "bg-amber-500 text-white" : "bg-white text-amber-800"}`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4">
-              <p className="mb-1 text-xs text-amber-800">휴무 사유</p>
-              <input
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder="예: 병원, 회의, 개인 일정"
-                className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-              />
-            </div>
             <button
-              onClick={saveHoliday}
-              disabled={saving || !holidayWeekdays.length}
-              className="mt-4 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+              onClick={() => setShowUnavailableForm((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-white/70 px-4 py-3 text-left transition-colors hover:border-amber-300"
             >
-              {saving ? "휴무 등록 중..." : "휴무 등록"}
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  휴무 / 불가 시간 설정
+                </p>
+                <p className="mt-1 text-xs text-amber-800">
+                  전체 휴무 또는 짧은 휴식 시간을 토글로 설정합니다.
+                </p>
+              </div>
+              {showUnavailableForm ? (
+                <ChevronUp size={18} className="text-amber-700" />
+              ) : (
+                <ChevronDown size={18} className="text-amber-700" />
+              )}
             </button>
+            {showUnavailableForm && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-white p-4">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    onClick={() => setUnavailableMode("holiday")}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium ${unavailableMode === "holiday" ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-900"}`}
+                  >
+                    휴무
+                  </button>
+                  <button
+                    onClick={() => setUnavailableMode("break")}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium ${unavailableMode === "break" ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-900"}`}
+                  >
+                    휴식 시간
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-xs text-amber-800">시작 날짜</p>
+                    <input
+                      type="date"
+                      min={today.toISOString().slice(0, 10)}
+                      value={unavailableStartDate}
+                      onChange={(event) =>
+                        setUnavailableStartDate(event.target.value)
+                      }
+                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs text-amber-800">종료 날짜</p>
+                    <input
+                      type="date"
+                      min={unavailableStartDate}
+                      value={unavailableEndDate}
+                      onChange={(event) =>
+                        setUnavailableEndDate(event.target.value)
+                      }
+                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="mb-2 text-xs text-amber-800">적용 요일</p>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAY_NAMES.map((day, index) => (
+                      <button
+                        key={`unavailable-${day}`}
+                        onClick={() =>
+                          setUnavailableWeekdays((prev) =>
+                            prev.includes(index)
+                              ? prev.filter((value) => value !== index)
+                              : [...prev, index],
+                          )
+                        }
+                        className={`rounded-full px-4 py-2 text-sm transition-colors ${unavailableWeekdays.includes(index) ? "bg-amber-500 text-white" : "bg-white text-amber-800"}`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {unavailableMode === "break" && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-xs text-amber-800">휴식 시작</p>
+                      <select
+                        value={breakStartTime}
+                        onChange={(event) =>
+                          setBreakStartTime(event.target.value)
+                        }
+                        className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
+                      >
+                        {hourOptions.slice(0, -1).map((time) => (
+                          <option key={`start-${time}`} value={time}>
+                            {time}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs text-amber-800">휴식 종료</p>
+                      <select
+                        value={breakEndTime}
+                        onChange={(event) =>
+                          setBreakEndTime(event.target.value)
+                        }
+                        className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
+                      >
+                        {hourOptions.slice(1).map((time) => (
+                          <option key={`end-${time}`} value={time}>
+                            {time}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={saveUnavailable}
+                  disabled={saving || !unavailableWeekdays.length}
+                  className="mt-4 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+                >
+                  {saving
+                    ? "저장 중..."
+                    : unavailableMode === "holiday"
+                      ? "휴무 등록"
+                      : "휴식 시간 등록"}
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -564,7 +702,10 @@ export default function TADashboard() {
         </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      <section
+        ref={detailSectionRef}
+        className="rounded-2xl border border-slate-200 bg-white p-5"
+      >
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <Calendar size={16} className="text-primary-500" />
@@ -572,11 +713,11 @@ export default function TADashboard() {
           </div>
           {selectedDate && (
             <button
-              onClick={clearHolidayForDate}
+              onClick={clearBlockedForDate}
               disabled={!selectedDateHasBlocked}
               className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              선택 날짜 휴무 취소
+              선택 날짜 불가 시간 취소
             </button>
           )}
         </div>
@@ -610,7 +751,7 @@ export default function TADashboard() {
                         )}
                         {status === "blocked" && (
                           <p className="mt-2 text-xs text-amber-700">
-                            휴무 사유: {slot.unavailable_reason || "사유 없음"}
+                            설정된 불가 시간
                           </p>
                         )}
                       </div>
@@ -621,7 +762,7 @@ export default function TADashboard() {
                           {status === "booked"
                             ? "예약 완료"
                             : status === "blocked"
-                              ? "휴무"
+                              ? "불가"
                               : "예약 가능"}
                         </span>
                         {status !== "booked" && (
