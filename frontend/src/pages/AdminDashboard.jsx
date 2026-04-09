@@ -18,51 +18,6 @@ const CATEGORY_OPTIONS = [
   "학습자료",
 ];
 
-const CATEGORY_STYLES = {
-  채용정보: {
-    tint: "bg-emerald-50 border-emerald-200 hover:border-emerald-300",
-    selectedTint: "bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200",
-    text: "text-emerald-700",
-    dot: "bg-emerald-500",
-    badge: "bg-emerald-100 text-emerald-700",
-  },
-  IT뉴스: {
-    tint: "bg-sky-50 border-sky-200 hover:border-sky-300",
-    selectedTint: "bg-sky-50 border-sky-300 ring-1 ring-sky-200",
-    text: "text-sky-700",
-    dot: "bg-sky-500",
-    badge: "bg-sky-100 text-sky-700",
-  },
-  AI타임스: {
-    tint: "bg-violet-50 border-violet-200 hover:border-violet-300",
-    selectedTint: "bg-violet-50 border-violet-300 ring-1 ring-violet-200",
-    text: "text-violet-700",
-    dot: "bg-violet-500",
-    badge: "bg-violet-100 text-violet-700",
-  },
-  "자격증·공모전": {
-    tint: "bg-amber-50 border-amber-200 hover:border-amber-300",
-    selectedTint: "bg-amber-50 border-amber-300 ring-1 ring-amber-200",
-    text: "text-amber-700",
-    dot: "bg-amber-500",
-    badge: "bg-amber-100 text-amber-700",
-  },
-  개발트렌드: {
-    tint: "bg-rose-50 border-rose-200 hover:border-rose-300",
-    selectedTint: "bg-rose-50 border-rose-300 ring-1 ring-rose-200",
-    text: "text-rose-700",
-    dot: "bg-rose-500",
-    badge: "bg-rose-100 text-rose-700",
-  },
-  학습자료: {
-    tint: "bg-indigo-50 border-indigo-200 hover:border-indigo-300",
-    selectedTint: "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200",
-    text: "text-indigo-700",
-    dot: "bg-indigo-500",
-    badge: "bg-indigo-100 text-indigo-700",
-  },
-};
-
 function DropZone({ onFileSelect, onBlockedAttempt, uploading, disabled }) {
   const [dragging, setDragging] = useState(false);
 
@@ -317,7 +272,6 @@ export default function AdminDashboard() {
     });
     return map;
   }, [items]);
-
   if (user?.role !== "admin") return null;
 
   return (
@@ -349,20 +303,6 @@ export default function AdminDashboard() {
               {option}
             </button>
           ))}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {CATEGORY_OPTIONS.map((option) => {
-            const style = CATEGORY_STYLES[option];
-            return (
-              <div
-                key={`legend-${option}`}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${style.badge}`}
-              >
-                <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
-                {option}
-              </div>
-            );
-          })}
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-2xl border border-primary-100 bg-primary-50/70 p-4">
@@ -491,15 +431,18 @@ export default function AdminDashboard() {
               const count = itemCountByDate[dateKey] || 0;
               const hoverTitles = titlesByDate[dateKey] || [];
               const categoryName = categoryByDate[dateKey] || "";
-              const categoryStyle = CATEGORY_STYLES[categoryName];
+              const categoryMatchesSelection =
+                count > 0 && categoryName === category;
               const selected = selectedDate === dateKey;
               const past = isPastDate(dateKey);
               const cellClass = selected
-                ? categoryStyle?.selectedTint ||
-                  "border-primary-400 bg-primary-50 ring-1 ring-primary-200"
+                ? categoryMatchesSelection
+                  ? "border-primary-500 bg-primary-100 ring-1 ring-primary-300"
+                  : "border-primary-400 bg-primary-50 ring-1 ring-primary-200"
                 : count > 0
-                  ? categoryStyle?.tint ||
-                    "border-primary-100 bg-primary-50/70 hover:border-primary-200"
+                  ? categoryMatchesSelection
+                    ? "border-primary-300 bg-primary-100/90 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)] hover:border-primary-400"
+                    : "border-primary-100 bg-primary-50/80 hover:border-primary-200"
                   : past
                     ? "border-slate-200 bg-slate-100/80 hover:border-slate-300"
                     : "border-slate-200 bg-slate-50 hover:border-primary-200 hover:bg-white";
@@ -512,30 +455,14 @@ export default function AdminDashboard() {
                     }}
                     className={`h-24 w-full rounded-xl border p-3 text-left transition-colors ${cellClass}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-semibold text-slate-700">
-                        {day}
-                      </div>
-                      {count > 0 && categoryStyle && (
-                        <span
-                          className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${categoryStyle.dot}`}
-                        />
-                      )}
+                    <div className="text-sm font-semibold text-slate-700">
+                      {day}
                     </div>
                     <div
-                      className={`mt-3 text-xs ${count ? categoryStyle?.text || "text-primary-700" : past ? "text-slate-400" : "text-slate-500"}`}
+                      className={`mt-3 text-xs ${count ? "text-primary-700" : past ? "text-slate-400" : "text-slate-500"}`}
                     >
                       {count ? `${count}개 등록` : "비어 있음"}
                     </div>
-                    {count > 0 && categoryName && (
-                      <div className="mt-2 overflow-hidden">
-                        <p
-                          className={`truncate text-[10px] font-medium ${categoryStyle?.text || "text-primary-700"}`}
-                        >
-                          {categoryName}
-                        </p>
-                      </div>
-                    )}
                   </button>
 
                   {hoverTitles.length > 0 && (

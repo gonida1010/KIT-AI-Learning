@@ -205,11 +205,260 @@ npm run dev
 9. 상시 메뉴 구성
 10. 실제 채널 배포 후 테스트
 
+### 1. Kakao Developers 앱 생성
+
+1. `https://developers.kakao.com` 에 접속합니다.
+2. 내 애플리케이션으로 이동합니다.
+3. 애플리케이션 추가하기를 누릅니다.
+4. 앱 이름과 회사명을 입력하고 앱을 생성합니다.
+5. 생성 후 앱 설정 > 앱 키로 이동합니다.
+6. 여기서 `REST API 키`를 복사합니다.
+
+이 값은 아래 환경변수에 들어갑니다.
+
+```env
+KAKAO_REST_API_KEY=발급받은_REST_API_키
+```
+
+### 2. 카카오 로그인 활성화
+
+웹 로그인용 설정입니다. 현재 프로젝트는 [backend/routers/auth.py](backend/routers/auth.py) 기준으로 카카오 로그인 URL 생성과 콜백 처리를 합니다.
+
+관련 API:
+
+- `GET /api/auth/kakao/login-url`
+- `POST /api/auth/kakao/callback`
+
+설정 순서:
+
+1. Kakao Developers에서 제품 설정 > 카카오 로그인으로 이동합니다.
+2. 카카오 로그인을 활성화합니다.
+3. Redirect URI를 등록합니다.
+4. 동의항목에서 최소 프로필 닉네임 사용 여부를 확인합니다.
+
+로컬 예시:
+
+```env
+KAKAO_REDIRECT_URI=http://localhost:3000/oauth/callback
+```
+
+운영 예시:
+
+```env
+KAKAO_REDIRECT_URI=https://your-frontend-domain.com/oauth/callback
+```
+
+### 3. 이 프로젝트에 넣어야 하는 환경변수
+
+파일 위치: `backend/.env`
+
+최소 권장 예시는 아래입니다.
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
+KAKAO_REST_API_KEY=발급받은_REST_API_키
+KAKAO_REDIRECT_URI=http://localhost:3000/oauth/callback
+FRONTEND_URL=http://localhost:3000
+CORS_ALLOW_ORIGINS=http://localhost:3000
+```
+
+운영 배포 시 예시는 아래처럼 바꿉니다.
+
+```env
+KAKAO_REST_API_KEY=발급받은_REST_API_키
+KAKAO_REDIRECT_URI=https://your-frontend-domain.com/oauth/callback
+FRONTEND_URL=https://your-frontend-domain.com
+CORS_ALLOW_ORIGINS=https://your-frontend-domain.com
+```
+
+### 4. 카카오톡 채널 생성
+
+1. 카카오톡 채널 관리자센터에 접속합니다.
+2. 채널 만들기를 눌러 서비스 채널을 생성합니다.
+3. 채널명, 검색용 아이디, 프로필 이미지를 설정합니다.
+4. 추후 오픈빌더와 연결할 채널인지 확인합니다.
+
+### 5. 카카오 i 오픈빌더 봇 생성
+
+1. 카카오 i 오픈빌더에 접속합니다.
+2. 새 봇 만들기를 선택합니다.
+3. 챗봇 이름과 기본 설명을 입력합니다.
+4. 이후 스킬 서버 연결 방식으로 설정합니다.
+
+현재 프로젝트의 카카오 스킬 서버 라우트는 [backend/routers/kakao.py](backend/routers/kakao.py)입니다.
+
+### 6. 채널과 오픈빌더 연결
+
+1. 오픈빌더에서 만든 봇 설정 화면으로 이동합니다.
+2. 카카오톡 채널 연결 메뉴를 찾습니다.
+3. 위에서 만든 채널을 이 봇과 연결합니다.
+4. 연결 후 테스트 채널에서 봇 응답이 가능한 상태로 둡니다.
+
+### 7. HTTPS 도메인 준비
+
+오픈빌더 스킬 URL은 실제 연결 시 HTTPS가 필요합니다. 선택지는 보통 아래 셋 중 하나입니다.
+
+1. 실제 서버 도메인 배포
+2. `ngrok` 사용
+3. `cloudflared tunnel` 사용
+
+로컬에서 임시 테스트만 하려면 예를 들어 `ngrok`을 쓸 수 있습니다.
+
+```powershell
+ngrok http 5060
+```
+
+그러면 예시 주소가 아래처럼 생성됩니다.
+
+```text
+https://abcd-1234.ngrok-free.app
+```
+
+이 도메인을 스킬 URL의 앞부분으로 사용하면 됩니다.
+
+### 8. 오픈빌더 스킬 URL 등록
+
+현재 이 프로젝트에서 실제 등록할 스킬 URL은 아래 3개입니다.
+
+#### 메인 AI 대화 스킬
+
+```text
+POST /api/kakao/webhook
+```
+
+운영 예시:
+
+```text
+https://your-domain.com/api/kakao/webhook
+```
+
+역할:
+
+- 일반 질의응답
+- 멀티 에이전트 라우팅
+- 멘토 상담 요청
+- 예약 메시지 후속 처리
+
+#### 조교 예약 스킬
+
+```text
+POST /api/kakao/webhook/schedule
+```
+
+운영 예시:
+
+```text
+https://your-domain.com/api/kakao/webhook/schedule
+```
+
+역할:
+
+- 예약 가능한 조교 시간 Quick Reply 제공
+- 조교 예약 시작점 제공
+
+#### 큐레이션 조회 스킬
+
+```text
+POST /api/kakao/webhook/curation
+```
+
+운영 예시:
+
+```text
+https://your-domain.com/api/kakao/webhook/curation
+```
+
+카테고리별로 나누고 싶으면 query string을 함께 붙일 수 있습니다.
+
+예시:
+
+```text
+https://your-domain.com/api/kakao/webhook/curation?category=채용정보,IT뉴스
+https://your-domain.com/api/kakao/webhook/curation?category=자격증·공모전
+```
+
 ### 오픈빌더 스킬 URL 예시
 
 - 메인 AI: `https://your-domain.com/api/kakao/webhook`
 - 큐레이션 조회: `https://your-domain.com/api/kakao/webhook/curation`
 - 조교 예약: `https://your-domain.com/api/kakao/webhook/schedule`
+
+### 9. 상시 메뉴 구성 예시
+
+오픈빌더 또는 채널 메뉴에서 아래처럼 두면 됩니다.
+
+1. 필요한 정보 채팅
+   연결 스킬: 메인 AI 스킬
+2. 조교 보충 수업
+   연결 스킬: 조교 예약 스킬
+3. 채용·IT뉴스 보기
+   연결 스킬: 큐레이션 조회 스킬
+   카테고리 예시: `채용정보,IT뉴스`
+4. 자격증·공모전 보기
+   연결 스킬: 큐레이션 조회 스킬
+   카테고리 예시: `자격증·공모전`
+5. 멘토 상담 요청
+   메인 AI 스킬에서 Quick Reply 또는 발화 유도로 처리
+
+### 10. 이 프로젝트에서 실제로 테스트해야 하는 입력 흐름
+
+#### 메인 챗봇 테스트
+
+1. 카카오톡 채널에서 일반 질문을 보냅니다.
+2. [backend/routers/kakao.py](backend/routers/kakao.py)의 `/api/kakao/webhook` 이 응답하는지 확인합니다.
+3. Quick Reply가 내려오는지 확인합니다.
+
+#### 멘토 상담 요청 테스트
+
+카카오톡에서 아래 중 하나를 보냅니다.
+
+```text
+멘토님과 직접 상담하기
+멘토 상담 요청
+```
+
+기대 결과:
+
+- handoff 큐 등록
+- 카카오 응답 반환
+
+#### 조교 예약 테스트
+
+1. 카카오 메뉴에서 조교 보충 수업 진입
+2. `/api/kakao/webhook/schedule` 이 예약 슬롯을 내려주는지 확인
+3. Quick Reply 버튼 클릭
+4. 아래 형식으로 입력
+
+```text
+예약정보:slot_id:홍길동 / 010-1234-5678 / 파이썬 클래스 self가 헷갈려요
+```
+
+5. 예약 완료 메시지가 오는지 확인
+6. [frontend/src/pages/TADashboard.jsx](frontend/src/pages/TADashboard.jsx) 에 예약이 반영되는지 확인
+
+#### 큐레이션 조회 테스트
+
+1. 큐레이션 메뉴 진입
+2. `/api/kakao/webhook/curation` 이 최신 큐레이션 5개를 내려주는지 확인
+3. 카테고리별 스킬이면 category query string 필터가 적용되는지 확인
+
+### 11. 배포 직전 최종 체크리스트
+
+1. `backend/.env` 의 `KAKAO_REST_API_KEY` 입력 완료
+2. `backend/.env` 의 `KAKAO_REDIRECT_URI` 가 실제 프론트 주소와 일치
+3. `CORS_ALLOW_ORIGINS` 에 실제 프론트 주소가 포함됨
+4. 백엔드 HTTPS 주소가 외부에서 접근 가능
+5. 오픈빌더 스킬 URL 3개가 모두 저장됨
+6. 카카오톡 채널과 오픈빌더 봇 연결 완료
+7. 일반 질의 테스트 완료
+8. 멘토 상담 요청 테스트 완료
+9. 조교 예약 Quick Reply 테스트 완료
+10. 조교 대시보드 반영 테스트 완료
+11. 큐레이션 조회 테스트 완료
+12. 실제 채널 배포 후 최종 실사용 테스트 완료
 
 ## 운영 전 체크 포인트
 
