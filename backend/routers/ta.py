@@ -1,7 +1,9 @@
 """조교(TA) 스케줄링 API — 빈 시간 예약 + AI 브리핑 리포트 + 반복 슬롯 생성."""
 
+import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -18,10 +20,10 @@ def _uid():
 class RecurringSlotRequest(BaseModel):
     ta_id: str
     ta_name: str
-    weekdays: list[int]       # 0=월 ~ 4=금
-    start_time: str           # "14:00"
-    end_time: str             # "15:00"
-    weeks: int = 4            # 몇 주간 생성
+    weekdays: list[int]
+    start_time: str
+    end_time: str
+    weeks: int = 4
     slot_type: str = "available"
     unavailable_reason: str | None = None
 
@@ -46,6 +48,299 @@ class BaseScheduleRequest(BaseModel):
     weekdays: list[int]
 
 
+class ScheduleAssistantRequest(BaseModel):
+    ta_id: str
+    ta_name: str
+    target_month: str
+    message: str
+    apply: bool = False
+    manual_plan: dict | None = None
+
+
+def _normalize_time(value: str, *, default: str) -> str:
+    match = re.search(r"(\d{1,2})(?::(\d{2}))?", value or "")
+    if not match:
+        return default
+    hour = max(0, min(23, int(match.group(1))))
+    minute = match.group(2) or "00"
+    return f"{hour:02d}:{minute}"
+
+
+def _time_range_hours(start_time: str, end_time: str) -> set[int]:
+    start_hour = int(start_time[:2])
+    end_hour = int(end_time[:2])
+    return {hour for hour in range(start_hour, end_hour) if 0 <= hour <= 23}
+
+
+def _month_bounds(target_month: str) -> tuple[date, date]:
+    start = datetime.strptime(f"{target_month}-01", "%Y-%m-%d").date()
+    if start.month == 12:
+        next_month = date(start.year + 1, 1, 1)
+    else:
+        next_month = date(start.year, start.month + 1, 1)
+    return start, next_month - timedelta(days=1)
+
+
+def _sanitize_rule(rule: dict) -> dict:
+    weekdays = [
+        int(day)
+        for day in (rule.get("weekdays") or [])
+        if isinstance(day, int) and 0 <= day <= 6
+    ]
+    return {
+        "weekdays": sorted(set(weekdays)),
+        "dates": [value for value in (rule.get("dates") or []) if isinstance(value, str)],
+        "start_time": _normalize_time(rule.get("start_time", "09:00"), default="09:00"),
+        "end_time": _normalize_time(rule.get("end_time", "22:00"), default="22:00"),
+    }
+
+
+def _sanitize_plan(plan: dict | None) -> dict:
+    payload = plan or {}
+    return {
+        "summary": (payload.get("summary") or "").strip(),
+        "available_rules": [
+            _sanitize_rule(rule) for rule in (payload.get("available_rules") or [])
+        ],
+        "full_day_off_rules": [
+            _sanitize_rule(rule)
+            for rule in (payload.get("full_day_off_rules") or [])
+        ],
+        "partial_unavailable_rules": [
+            _sanitize_rule(rule)
+            for rule in (payload.get("partial_unavailable_rules") or [])
+        ],
+    }
+
+
+def _weekday_labels(weekdays: list[int]) -> str:
+    labels = ["월", "화", "수", "목", "금", "토", "일"]
+    return ", ".join(labels[index] for index in weekdays if 0 <= index < len(labels))
+
+
+def _summarize_plan(plan: dict) -> str:
+    summary_parts = []
+    if plan.get("full_day_off_rules"):
+        off_labels = []
+        for rule in plan["full_day_off_rules"]:
+            label = _weekday_labels(rule.get("weekdays", []))
+            if label:
+                off_labels.append(f"{label} 휴무")
+        if off_labels:
+            summary_parts.append(" / ".join(off_labels))
+
+    if plan.get("available_rules"):
+        available_labels = []
+        for rule in plan["available_rules"]:
+            label = _weekday_labels(rule.get("weekdays", []))
+            if label:
+                available_labels.append(
+                    f"{label} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 가능"
+                )
+        if available_labels:
+            summary_parts.append(" / ".join(available_labels))
+
+    if plan.get("partial_unavailable_rules"):
+        partial_labels = []
+        for rule in plan["partial_unavailable_rules"]:
+            label = _weekday_labels(rule.get("weekdays", []))
+            if label:
+                partial_labels.append(
+                    f"{label} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 불가"
+                )
+        if partial_labels:
+            summary_parts.append(" / ".join(partial_labels))
+
+    return " | ".join(summary_parts) or "설정 내용을 다시 확인해 주세요."
+
+
+def _fallback_schedule_plan(message: str) -> dict:
+    text = (message or "").strip()
+    off_weekdays: set[int] = set()
+    available_weekdays: set[int] = set()
+
+    if "주말" in text or "토일" in text:
+        off_weekdays.update({5, 6})
+    if "평일" in text or "월금" in text or "월~금" in text or "월-금" in text:
+        available_weekdays.update({0, 1, 2, 3, 4})
+    if "나머지 요일" in text and off_weekdays:
+        available_weekdays.update(set(range(7)) - off_weekdays)
+
+    time_match = re.search(r"(\d{1,2})\s*시\s*부터\s*(\d{1,2})\s*시\s*까지", text)
+    start_time = "09:00"
+    end_time = "16:00"
+    if time_match:
+        start_time = f"{int(time_match.group(1)):02d}:00"
+        end_time = f"{int(time_match.group(2)):02d}:00"
+
+    if not available_weekdays and not off_weekdays:
+        available_weekdays.update({0, 1, 2, 3, 4})
+
+    summary_parts = []
+    if off_weekdays:
+        summary_parts.append("토·일 전체 휴무")
+    if available_weekdays:
+        summary_parts.append(f"나머지 요일 {start_time}~{end_time} 예약 가능")
+
+    return {
+        "summary": " / ".join(summary_parts) or "설정 내용을 다시 입력해 주세요.",
+        "available_rules": [
+            {
+                "weekdays": sorted(available_weekdays),
+                "dates": [],
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+        ]
+        if available_weekdays
+        else [],
+        "full_day_off_rules": [
+            {
+                "weekdays": sorted(off_weekdays),
+                "dates": [],
+                "start_time": "09:00",
+                "end_time": "22:00",
+            }
+        ]
+        if off_weekdays
+        else [],
+        "partial_unavailable_rules": [],
+    }
+
+
+async def _parse_schedule_plan(target_month: str, message: str) -> dict:
+    from main import llm_provider
+
+    prompt = f"""
+당신은 조교 월간 스케줄 설정 비서입니다.
+선택한 월({target_month})에 대해서만 이해하고, 조교의 자연어 지시를 월간 시간표 규칙으로 변환하세요.
+
+반드시 아래 JSON 형식으로만 답변하세요:
+{{
+  "summary": "조교에게 보여줄 짧은 확인 문장",
+  "available_rules": [
+    {{"weekdays": [0, 1, 2, 3, 4], "dates": [], "start_time": "09:00", "end_time": "16:00"}}
+  ],
+  "full_day_off_rules": [
+    {{"weekdays": [5, 6], "dates": [], "start_time": "09:00", "end_time": "22:00"}}
+  ],
+  "partial_unavailable_rules": [
+    {{"weekdays": [2], "dates": [], "start_time": "12:00", "end_time": "13:00"}}
+  ]
+}}
+
+규칙:
+- 요일 인덱스는 0=월, 1=화, ..., 6=일 입니다.
+- "휴무"는 full_day_off_rules 에 넣으세요.
+- "예약 가능"은 available_rules 에 넣으세요.
+- "점심시간", "휴식", "불가 시간"은 partial_unavailable_rules 에 넣으세요.
+- 시간은 HH:MM 형식으로만 출력하세요.
+- 사용자가 말하지 않은 규칙은 만들지 마세요.
+- summary 는 1문장으로 짧게 작성하세요.
+"""
+
+    if llm_provider:
+        try:
+            raw_plan = await llm_provider.chat_json(prompt, message)
+            return _sanitize_plan(raw_plan)
+        except Exception:
+            pass
+
+    return _fallback_schedule_plan(message)
+
+
+def _matches_rule(target_date: date, rule: dict) -> bool:
+    return (
+        target_date.weekday() in rule.get("weekdays", [])
+        or target_date.strftime("%Y-%m-%d") in rule.get("dates", [])
+    )
+
+
+def _new_slot(ta_id: str, ta_name: str, date_str: str, hour: int, slot_type: str) -> dict:
+    return {
+        "id": _uid(),
+        "ta_id": ta_id,
+        "ta_name": ta_name,
+        "date": date_str,
+        "start_time": f"{hour:02d}:00",
+        "end_time": f"{hour + 1:02d}:00",
+        "slot_type": slot_type,
+        "unavailable_reason": None,
+        "is_available": slot_type == "available",
+        "booked_by": None,
+        "booked_by_name": None,
+        "booking_phone": None,
+        "booking_description": None,
+        "booking_summary": None,
+        "briefing_report": None,
+    }
+
+
+def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict) -> dict:
+    start, end = _month_bounds(target_month)
+    removed_count = store.clear_unbooked_ta_slots(
+        ta_id,
+        start.strftime("%Y-%m-%d"),
+        end.strftime("%Y-%m-%d"),
+    )
+
+    created_slots: list[dict] = []
+    preserved_booked_count = 0
+    cursor = start
+
+    while cursor <= end:
+        date_str = cursor.strftime("%Y-%m-%d")
+        existing_booked_hours = {
+            int(slot["start_time"][:2])
+            for slot in store.schedules
+            if slot.get("ta_id") == ta_id and slot.get("date") == date_str and slot.get("booked_by")
+        }
+        preserved_booked_count += len(existing_booked_hours)
+
+        full_day_off = any(
+            _matches_rule(cursor, rule) for rule in plan.get("full_day_off_rules", [])
+        )
+        if full_day_off:
+            for hour in sorted(set(range(9, 22)) - existing_booked_hours):
+                created_slots.append(_new_slot(ta_id, ta_name, date_str, hour, "blocked"))
+            cursor += timedelta(days=1)
+            continue
+
+        available_hours: set[int] = set()
+        blocked_hours: set[int] = set()
+
+        for rule in plan.get("available_rules", []):
+            if _matches_rule(cursor, rule):
+                available_hours.update(_time_range_hours(rule["start_time"], rule["end_time"]))
+
+        for rule in plan.get("partial_unavailable_rules", []):
+            if _matches_rule(cursor, rule):
+                blocked_hours.update(_time_range_hours(rule["start_time"], rule["end_time"]))
+
+        blocked_hours -= existing_booked_hours
+        available_hours = (available_hours - blocked_hours) - existing_booked_hours
+
+        for hour in sorted(available_hours):
+            created_slots.append(_new_slot(ta_id, ta_name, date_str, hour, "available"))
+        for hour in sorted(blocked_hours):
+            created_slots.append(_new_slot(ta_id, ta_name, date_str, hour, "blocked"))
+
+        cursor += timedelta(days=1)
+
+    store.add_ta_slots(created_slots)
+    return {
+        "removed_count": removed_count,
+        "created_count": len(created_slots),
+        "created_available_count": len(
+            [slot for slot in created_slots if slot.get("slot_type") == "available"]
+        ),
+        "created_blocked_count": len(
+            [slot for slot in created_slots if slot.get("slot_type") == "blocked"]
+        ),
+        "preserved_booked_count": preserved_booked_count,
+    }
+
+
 @router.get("/slots")
 async def get_slots():
     return store.get_all_slots()
@@ -59,14 +354,21 @@ async def get_available():
 @router.post("/book")
 async def book_slot(req: BookingRequest):
     from main import llm_provider
-    from services.agent_b import generate_briefing_report
+    from services.agent_b import generate_briefing_report, normalize_booking_request
 
     events = store.get_student_events(req.student_id)
     keywords = [e["content"] for e in events if e["event_type"] == "search"]
+    student = store.get_user(req.student_id) or {}
+    normalized = await normalize_booking_request(
+        req.student_name or student.get("name", "수강생"),
+        req.student_phone,
+        req.description,
+        llm_provider,
+    )
 
     briefing = await generate_briefing_report(
-        student_name=req.student_name,
-        raw_input=req.description,
+        student_name=normalized["student_name"],
+        raw_input=normalized["cleaned_request"],
         search_history=keywords,
         llm=llm_provider,
     )
@@ -74,56 +376,100 @@ async def book_slot(req: BookingRequest):
     slot = store.book_slot(
         slot_id=req.slot_id,
         student_id=req.student_id,
-        student_name=req.student_name,
-        desc=req.description,
+        student_name=normalized["student_name"],
+        desc=normalized["cleaned_request"],
         briefing=briefing,
+        student_phone=normalized["student_phone"],
+        summary=normalized["short_summary"],
     )
     if not slot:
         raise HTTPException(400, "해당 시간대는 이미 예약됨")
 
-    store.add_event(req.student_id, {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "event_type": "doc_access",
-        "content": f"조교 보충수업 예약 ({slot['ta_name']})",
-        "detail": req.description[:80],
-    })
+    store.add_event(
+        req.student_id,
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "event_type": "doc_access",
+            "content": f"조교 보충수업 예약 ({slot['ta_name']})",
+            "detail": normalized["short_summary"][:80],
+        },
+    )
 
-    return {"status": "ok", "slot": slot, "briefing": briefing}
+    return {
+        "status": "ok",
+        "slot": slot,
+        "briefing": briefing,
+        "normalized_request": normalized,
+    }
 
 
 @router.get("/briefings")
 async def get_briefings():
-    return [s for s in store.get_booked_slots() if s.get("briefing_report")]
+    return [slot for slot in store.get_booked_slots() if slot.get("briefing_report")]
+
+
+@router.post("/schedule-assistant")
+async def ta_schedule_assistant(req: ScheduleAssistantRequest):
+    if not req.message.strip() and not req.manual_plan:
+        raise HTTPException(400, "설정 내용을 입력해 주세요.")
+
+    try:
+        start, end = _month_bounds(req.target_month)
+    except ValueError as exc:
+        raise HTTPException(400, "월 형식은 YYYY-MM 이어야 합니다.") from exc
+
+    plan = (
+        _sanitize_plan(req.manual_plan)
+        if req.manual_plan
+        else await _parse_schedule_plan(req.target_month, req.message)
+    )
+    summary = (plan.get("summary") or "").strip() or _summarize_plan(plan)
+
+    response = {
+        "status": "preview",
+        "target_month": req.target_month,
+        "summary": summary,
+        "plan": plan,
+        "month_range": {
+            "start_date": start.strftime("%Y-%m-%d"),
+            "end_date": end.strftime("%Y-%m-%d"),
+        },
+    }
+    if req.apply:
+        response.update(
+            {
+                "status": "applied",
+                "applied": _apply_schedule_plan(req.ta_id, req.ta_name, req.target_month, plan),
+            }
+        )
+    return response
 
 
 @router.post("/slots")
 async def add_slot(slot: TASlot):
-    d = slot.model_dump()
-    d["id"] = _uid()
-    store.add_ta_slot(d)
-    return {"status": "ok", "slot": d}
+    data = slot.model_dump()
+    data["id"] = _uid()
+    store.add_ta_slot(data)
+    return {"status": "ok", "slot": data}
 
 
 @router.post("/slots/recurring")
 async def add_recurring_slots(req: RecurringSlotRequest):
-    """반복 슬롯 일괄 생성 — 지정 요일/시간을 N주간 자동 생성."""
     created = []
     today = datetime.now().date()
-    # 이번 주 월요일 기준
     monday = today - timedelta(days=today.weekday())
 
     for week in range(req.weeks):
-        for wd in req.weekdays:
-            target = monday + timedelta(weeks=week, days=wd)
+        for weekday in req.weekdays:
+            target = monday + timedelta(weeks=week, days=weekday)
             if target < today:
                 continue
             date_str = target.strftime("%Y-%m-%d")
-            # 중복 체크
             exists = any(
-                s["ta_id"] == req.ta_id
-                and s["date"] == date_str
-                and s["start_time"] == req.start_time
-                for s in store.schedules
+                slot["ta_id"] == req.ta_id
+                and slot["date"] == date_str
+                and slot["start_time"] == req.start_time
+                for slot in store.schedules
             )
             if exists:
                 continue
@@ -139,7 +485,9 @@ async def add_recurring_slots(req: RecurringSlotRequest):
                 "is_available": req.slot_type == "available",
                 "booked_by": None,
                 "booked_by_name": None,
+                "booking_phone": None,
                 "booking_description": None,
+                "booking_summary": None,
                 "briefing_report": None,
             }
             store.add_ta_slot(slot)
@@ -158,15 +506,14 @@ async def add_bulk_slots(req: BulkSlotRequest):
     created = []
     current = start
     while current <= end:
-        weekday = current.weekday()
-        if weekday in req.weekdays:
+        if current.weekday() in req.weekdays:
             date_str = current.strftime("%Y-%m-%d")
             exists = any(
-                s["ta_id"] == req.ta_id
-                and s["date"] == date_str
-                and s["start_time"] == req.start_time
-                and s["end_time"] == req.end_time
-                for s in store.schedules
+                slot["ta_id"] == req.ta_id
+                and slot["date"] == date_str
+                and slot["start_time"] == req.start_time
+                and slot["end_time"] == req.end_time
+                for slot in store.schedules
             )
             if not exists:
                 slot = {
@@ -181,7 +528,9 @@ async def add_bulk_slots(req: BulkSlotRequest):
                     "is_available": req.slot_type == "available",
                     "booked_by": None,
                     "booked_by_name": None,
+                    "booking_phone": None,
                     "booking_description": None,
+                    "booking_summary": None,
                     "briefing_report": None,
                 }
                 store.add_ta_slot(slot)
@@ -201,18 +550,17 @@ async def add_base_template_slots(req: BaseScheduleRequest):
     created = []
     current = start
     while current <= end:
-        weekday = current.weekday()
-        if weekday in req.weekdays:
+        if current.weekday() in req.weekdays:
             date_str = current.strftime("%Y-%m-%d")
             for hour in range(9, 22):
                 start_time = f"{hour:02d}:00"
                 end_time = f"{hour + 1:02d}:00"
                 exists = any(
-                    s["ta_id"] == req.ta_id
-                    and s["date"] == date_str
-                    and s["start_time"] == start_time
-                    and s["end_time"] == end_time
-                    for s in store.schedules
+                    slot["ta_id"] == req.ta_id
+                    and slot["date"] == date_str
+                    and slot["start_time"] == start_time
+                    and slot["end_time"] == end_time
+                    for slot in store.schedules
                 )
                 if exists:
                     continue
@@ -228,7 +576,9 @@ async def add_base_template_slots(req: BaseScheduleRequest):
                     "is_available": True,
                     "booked_by": None,
                     "booked_by_name": None,
+                    "booking_phone": None,
                     "booking_description": None,
+                    "booking_summary": None,
                     "briefing_report": None,
                 }
                 store.add_ta_slot(slot)
@@ -240,12 +590,11 @@ async def add_base_template_slots(req: BaseScheduleRequest):
 
 @router.delete("/slots/{slot_id}")
 async def delete_slot(slot_id: str):
-    """슬롯 삭제 (예약되지 않은 슬롯만)."""
-    for i, s in enumerate(store.schedules):
-        if s["id"] == slot_id:
-            if s.get("booked_by"):
+    for index, slot in enumerate(store.schedules):
+        if slot["id"] == slot_id:
+            if slot.get("booked_by"):
                 raise HTTPException(400, "이미 예약된 슬롯은 삭제할 수 없습니다.")
-            store.schedules.pop(i)
+            store.schedules.pop(index)
             store._save()
             return {"status": "ok"}
     raise HTTPException(404, "슬롯을 찾을 수 없습니다.")

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { Calendar, ExternalLink, Pencil, Trash2, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  ExternalLink,
+  Pencil,
+  Trash2,
+  Upload,
+} from "lucide-react";
 
 const CATEGORY_OPTIONS = [
   "채용정보",
@@ -11,23 +18,79 @@ const CATEGORY_OPTIONS = [
   "학습자료",
 ];
 
-function DropZone({ onFileSelect, uploading, disabled }) {
+const CATEGORY_STYLES = {
+  채용정보: {
+    tint: "bg-emerald-50 border-emerald-200 hover:border-emerald-300",
+    selectedTint: "bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200",
+    text: "text-emerald-700",
+    dot: "bg-emerald-500",
+    badge: "bg-emerald-100 text-emerald-700",
+  },
+  IT뉴스: {
+    tint: "bg-sky-50 border-sky-200 hover:border-sky-300",
+    selectedTint: "bg-sky-50 border-sky-300 ring-1 ring-sky-200",
+    text: "text-sky-700",
+    dot: "bg-sky-500",
+    badge: "bg-sky-100 text-sky-700",
+  },
+  AI타임스: {
+    tint: "bg-violet-50 border-violet-200 hover:border-violet-300",
+    selectedTint: "bg-violet-50 border-violet-300 ring-1 ring-violet-200",
+    text: "text-violet-700",
+    dot: "bg-violet-500",
+    badge: "bg-violet-100 text-violet-700",
+  },
+  "자격증·공모전": {
+    tint: "bg-amber-50 border-amber-200 hover:border-amber-300",
+    selectedTint: "bg-amber-50 border-amber-300 ring-1 ring-amber-200",
+    text: "text-amber-700",
+    dot: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-700",
+  },
+  개발트렌드: {
+    tint: "bg-rose-50 border-rose-200 hover:border-rose-300",
+    selectedTint: "bg-rose-50 border-rose-300 ring-1 ring-rose-200",
+    text: "text-rose-700",
+    dot: "bg-rose-500",
+    badge: "bg-rose-100 text-rose-700",
+  },
+  학습자료: {
+    tint: "bg-indigo-50 border-indigo-200 hover:border-indigo-300",
+    selectedTint: "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200",
+    text: "text-indigo-700",
+    dot: "bg-indigo-500",
+    badge: "bg-indigo-100 text-indigo-700",
+  },
+};
+
+function DropZone({ onFileSelect, onBlockedAttempt, uploading, disabled }) {
   const [dragging, setDragging] = useState(false);
 
   return (
     <label
       onDragOver={(event) => {
-        if (disabled) return;
         event.preventDefault();
+        if (disabled) {
+          setDragging(false);
+          return;
+        }
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={(event) => {
-        if (disabled) return;
         event.preventDefault();
         setDragging(false);
+        if (disabled) {
+          onBlockedAttempt();
+          return;
+        }
         const file = event.dataTransfer.files?.[0];
         if (file) onFileSelect(file);
+      }}
+      onClick={(event) => {
+        if (!disabled) return;
+        event.preventDefault();
+        onBlockedAttempt();
       }}
       className={`flex min-h-[156px] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-5 py-6 text-center transition-colors ${disabled ? "cursor-not-allowed border-slate-200 bg-slate-100" : dragging ? "cursor-pointer border-primary-400 bg-primary-50" : "cursor-pointer border-slate-300 bg-slate-50"}`}
     >
@@ -89,6 +152,7 @@ export default function AdminDashboard() {
   const [linkValue, setLinkValue] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [blockedNotice, setBlockedNotice] = useState("");
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [editingId, setEditingId] = useState("");
@@ -106,9 +170,20 @@ export default function AdminDashboard() {
     if (user?.role === "admin") fetchItems();
   }, [fetchItems, user?.role]);
 
+  useEffect(() => {
+    if (!blockedNotice) return undefined;
+    const timeoutId = window.setTimeout(() => setBlockedNotice(""), 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [blockedNotice]);
+
+  const showBlockedNotice = useCallback(() => {
+    setBlockedNotice("이미 이 날짜에 파일이 설정되어 있습니다.");
+  }, []);
+
   const uploadFile = async (file) => {
     if (!file) return;
     if (hasItemForSelectedDate) {
+      showBlockedNotice();
       setError(
         "하루에는 큐레이션 자료를 1개만 등록할 수 있습니다. 기존 자료를 수정하거나 삭제해 주세요.",
       );
@@ -142,6 +217,7 @@ export default function AdminDashboard() {
   const uploadLink = async () => {
     if (!linkValue.trim()) return;
     if (hasItemForSelectedDate) {
+      showBlockedNotice();
       setError(
         "하루에는 큐레이션 자료를 1개만 등록할 수 있습니다. 기존 자료를 수정하거나 삭제해 주세요.",
       );
@@ -226,11 +302,42 @@ export default function AdminDashboard() {
     });
     return map;
   }, [items]);
+  const titlesByDate = useMemo(() => {
+    const map = {};
+    items.forEach((item) => {
+      if (!map[item.date]) map[item.date] = [];
+      if (item.title) map[item.date].push(item.title);
+    });
+    return map;
+  }, [items]);
+  const categoryByDate = useMemo(() => {
+    const map = {};
+    items.forEach((item) => {
+      if (item.category) map[item.date] = item.category;
+    });
+    return map;
+  }, [items]);
 
   if (user?.role !== "admin") return null;
 
   return (
     <div className="space-y-6">
+      <div
+        className={`pointer-events-none fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 transition-all duration-200 ${blockedNotice ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
+      >
+        <div className="rounded-2xl border border-amber-200 bg-white/95 px-5 py-4 text-center shadow-2xl backdrop-blur">
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-500">
+            <AlertCircle size={18} />
+          </div>
+          <p className="mt-3 text-sm font-semibold text-slate-800">
+            {blockedNotice || "이미 이 날짜에 파일이 설정되어 있습니다."}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            기존 자료를 수정하거나 삭제한 뒤 다시 등록해 주세요.
+          </p>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap gap-2">
           {CATEGORY_OPTIONS.map((option) => (
@@ -242,6 +349,20 @@ export default function AdminDashboard() {
               {option}
             </button>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {CATEGORY_OPTIONS.map((option) => {
+            const style = CATEGORY_STYLES[option];
+            return (
+              <div
+                key={`legend-${option}`}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${style.badge}`}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
+                {option}
+              </div>
+            );
+          })}
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-2xl border border-primary-100 bg-primary-50/70 p-4">
@@ -269,6 +390,7 @@ export default function AdminDashboard() {
             <div className="mt-4">
               <DropZone
                 onFileSelect={uploadFile}
+                onBlockedAttempt={showBlockedNotice}
                 uploading={uploading}
                 disabled={hasItemForSelectedDate}
               />
@@ -303,9 +425,7 @@ export default function AdminDashboard() {
             />
             <button
               onClick={uploadLink}
-              disabled={
-                uploading || !linkValue.trim() || hasItemForSelectedDate
-              }
+              disabled={uploading || !linkValue.trim()}
               className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               링크 등록
@@ -369,33 +489,73 @@ export default function AdminDashboard() {
                 );
               const dateKey = fmt(viewYear, viewMonth, day);
               const count = itemCountByDate[dateKey] || 0;
+              const hoverTitles = titlesByDate[dateKey] || [];
+              const categoryName = categoryByDate[dateKey] || "";
+              const categoryStyle = CATEGORY_STYLES[categoryName];
               const selected = selectedDate === dateKey;
               const past = isPastDate(dateKey);
               const cellClass = selected
-                ? "border-primary-400 bg-primary-50 ring-1 ring-primary-200"
+                ? categoryStyle?.selectedTint ||
+                  "border-primary-400 bg-primary-50 ring-1 ring-primary-200"
                 : count > 0
-                  ? "border-primary-100 bg-primary-50/70 hover:border-primary-200"
+                  ? categoryStyle?.tint ||
+                    "border-primary-100 bg-primary-50/70 hover:border-primary-200"
                   : past
                     ? "border-slate-200 bg-slate-100/80 hover:border-slate-300"
                     : "border-slate-200 bg-slate-50 hover:border-primary-200 hover:bg-white";
               return (
-                <button
-                  key={dateKey}
-                  onClick={() => {
-                    setSelectedDate(dateKey);
-                    setError("");
-                  }}
-                  className={`h-24 rounded-xl border p-3 text-left transition-colors ${cellClass}`}
-                >
-                  <div className="text-sm font-semibold text-slate-700">
-                    {day}
-                  </div>
-                  <div
-                    className={`mt-3 text-xs ${count ? "text-primary-700" : past ? "text-slate-400" : "text-slate-500"}`}
+                <div key={dateKey} className="group relative">
+                  <button
+                    onClick={() => {
+                      setSelectedDate(dateKey);
+                      setError("");
+                    }}
+                    className={`h-24 w-full rounded-xl border p-3 text-left transition-colors ${cellClass}`}
                   >
-                    {count ? `${count}개 등록` : "비어 있음"}
-                  </div>
-                </button>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-semibold text-slate-700">
+                        {day}
+                      </div>
+                      {count > 0 && categoryStyle && (
+                        <span
+                          className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${categoryStyle.dot}`}
+                        />
+                      )}
+                    </div>
+                    <div
+                      className={`mt-3 text-xs ${count ? categoryStyle?.text || "text-primary-700" : past ? "text-slate-400" : "text-slate-500"}`}
+                    >
+                      {count ? `${count}개 등록` : "비어 있음"}
+                    </div>
+                    {count > 0 && categoryName && (
+                      <div className="mt-2 overflow-hidden">
+                        <p
+                          className={`truncate text-[10px] font-medium ${categoryStyle?.text || "text-primary-700"}`}
+                        >
+                          {categoryName}
+                        </p>
+                      </div>
+                    )}
+                  </button>
+
+                  {hoverTitles.length > 0 && (
+                    <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-48 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-xl border border-slate-200 bg-slate-950/95 px-3 py-2 text-[11px] leading-4 text-white opacity-0 shadow-2xl transition-all duration-150 group-hover:opacity-100 md:block">
+                      <p className="mb-1 font-semibold text-slate-200">
+                        첨부 제목
+                      </p>
+                      <div className="space-y-1">
+                        {hoverTitles.map((title, titleIndex) => (
+                          <p
+                            key={`${dateKey}-title-${titleIndex}`}
+                            className="break-words"
+                          >
+                            {title}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

@@ -62,6 +62,10 @@ async def kakao_webhook(request: Request):
 
     booking_match = re.match(r"^예약:(?P<slot_id>[a-f0-9]{12})$", utterance)
     booking_desc_match = re.match(r"^예약설명:(?P<slot_id>[a-f0-9]{12}):(?P<desc>.+)$", utterance)
+    booking_info_match = re.match(
+        r"^예약정보:(?P<slot_id>[a-f0-9]{12}):(?P<name>[^/]+?)\s*/\s*(?P<phone>[^/]+?)\s*/\s*(?P<desc>.+)$",
+        utterance,
+    )
 
     student_id = f"kakao_{kakao_user_id}"
     if not store.get_user(student_id):
@@ -101,35 +105,56 @@ async def kakao_webhook(request: Request):
             return simple_text("선택한 시간이 더 이상 예약 가능하지 않습니다. 다시 확인해 주세요.")
         return simple_text(
             f"선택한 시간: {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}\n"
-            f"아래 형식으로 어려운 내용을 보내주세요.\n"
-            f"예약설명:{slot_id}:파이썬 클래스가 어려워요"
+            f"아래 형식으로 이름, 연락처, 필요한 내용을 보내주세요.\n"
+            f"예약정보:{slot_id}:홍길동 / 010-1234-5678 / 파이썬 클래스 self가 헷갈려요"
         )
 
-    if booking_desc_match:
+    if booking_desc_match or booking_info_match:
         from main import llm_provider
-        from services.agent_b import generate_briefing_report
+        from services.agent_b import generate_briefing_report, normalize_booking_request
 
-        slot_id = booking_desc_match.group("slot_id")
-        description = booking_desc_match.group("desc").strip()
+        if booking_info_match:
+            slot_id = booking_info_match.group("slot_id")
+            input_name = booking_info_match.group("name").strip()
+            phone = booking_info_match.group("phone").strip()
+            description = booking_info_match.group("desc").strip()
+        else:
+            slot_id = booking_desc_match.group("slot_id")
+            input_name = ""
+            phone = ""
+            description = booking_desc_match.group("desc").strip()
+
         student = store.get_user(student_id)
         slot = next((item for item in store.get_available_slots() if item.get("id") == slot_id), None)
         if not slot:
             return simple_text("선택한 시간이 더 이상 예약 가능하지 않습니다. 다시 예약 목록을 확인해 주세요.")
 
+        normalized = await normalize_booking_request(
+            input_name or (student or {}).get("name", "수강생"),
+            phone,
+            description,
+            llm_provider,
+        )
+        if student and normalized["student_name"] and student.get("name", "").startswith("카카오 유저"):
+            student["name"] = normalized["student_name"]
+            store._save()
+
         events = store.get_student_events(student_id)
         keywords = [event["content"] for event in events if event["event_type"] == "search"]
         briefing = await generate_briefing_report(
-            student_name=(student or {}).get("name", "수강생"),
-            raw_input=description,
+            student_name=normalized["student_name"],
+            raw_input=normalized["cleaned_request"],
             search_history=keywords,
             llm=llm_provider,
         )
         booked = store.book_slot(
             slot_id=slot_id,
             student_id=student_id,
-            student_name=(student or {}).get("name", "수강생"),
-            desc=description,
+            student_name=normalized["student_name"],
+            desc=normalized["cleaned_request"],
             briefing=briefing,
+            student_phone=normalized["student_phone"],
+            summary=normalized["short_summary"],
         )
         if not booked:
             return simple_text("예약 처리 중 시간이 마감되었습니다. 다시 시도해 주세요.")
@@ -138,13 +163,14 @@ async def kakao_webhook(request: Request):
             "timestamp": _now(),
             "event_type": "doc_access",
             "content": f"조교 보충수업 예약 ({booked['ta_name']})",
-            "detail": description[:80],
+            "detail": normalized["short_summary"][:80],
         })
         return simple_text(
             f"예약 완료되었습니다.\n"
             f"- 시간: {booked['date']} {booked['start_time']}~{booked['end_time']}\n"
             f"- 조교: {booked['ta_name']}\n"
-            f"- 공부 내용: {description}\n\n"
+            f"- 연락처: {normalized['student_phone'] or '미입력'}\n"
+            f"- 공부 내용: {normalized['cleaned_request']}\n\n"
             f"조교 대시보드에는 요약된 브리핑도 함께 전달됩니다."
         )
 

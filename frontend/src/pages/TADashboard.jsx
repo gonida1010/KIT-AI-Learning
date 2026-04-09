@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import {
+  Bot,
   Calendar,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Clock,
-  Info,
+  Phone,
   RefreshCw,
-  Trash2,
+  Send,
   User,
 } from "lucide-react";
 
 const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-const DEFAULT_START_HOUR = "09:00";
-const DEFAULT_END_HOUR = "22:00";
+const WORKDAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"];
+const FULL_DAY_HOURS = 13;
+const TIME_OPTIONS = Array.from(
+  { length: 14 },
+  (_, index) => `${String(9 + index).padStart(2, "0")}:00`,
+);
 
 function fmt(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function formatMonthValue(year, month) {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
 function getMonthDays(year, month) {
@@ -38,31 +47,254 @@ function slotStatus(slot) {
   return "available";
 }
 
-function BriefingPanel({ slot }) {
-  if (!slot.briefing_report) {
-    return (
-      <p className="mt-3 text-xs text-slate-400">브리핑 리포트가 없습니다.</p>
+function maskName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return "수강생";
+  if (trimmed.length === 1) return `${trimmed}*`;
+  if (trimmed.length === 2) return `${trimmed[0]}*`;
+  return `${trimmed[0]}${"*".repeat(trimmed.length - 2)}${trimmed.at(-1)}`;
+}
+
+function isFullHoliday(daySlots) {
+  if (!daySlots.length) return false;
+  const blocked = daySlots.filter(
+    (slot) => slotStatus(slot) === "blocked",
+  ).length;
+  const hasBooked = daySlots.some((slot) => slotStatus(slot) === "booked");
+  const hasAvailable = daySlots.some(
+    (slot) => slotStatus(slot) === "available",
+  );
+  return !hasBooked && !hasAvailable && blocked >= FULL_DAY_HOURS;
+}
+
+function defaultManualRow() {
+  return {
+    mode: "none",
+    startTime: "09:00",
+    endTime: "16:00",
+    breakEnabled: false,
+    breakStart: "12:00",
+    breakEnd: "13:00",
+  };
+}
+
+function nextHour(time) {
+  const hour = Number(time.slice(0, 2));
+  return `${String(Math.min(hour + 1, 22)).padStart(2, "0")}:00`;
+}
+
+function previousHour(time) {
+  const hour = Number(time.slice(0, 2));
+  return `${String(Math.max(hour - 1, 9)).padStart(2, "0")}:00`;
+}
+
+function buildRangeLabels(hours) {
+  if (!hours.length) return [];
+  const sorted = [...new Set(hours)].sort((left, right) => left - right);
+  const labels = [];
+  let start = sorted[0];
+  let end = sorted[0];
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const hour = sorted[index];
+    if (hour === end + 1) {
+      end = hour;
+      continue;
+    }
+    labels.push(
+      `${String(start).padStart(2, "0")}:00-${String(end + 1).padStart(2, "0")}:00`,
     );
+    start = hour;
+    end = hour;
   }
 
+  labels.push(
+    `${String(start).padStart(2, "0")}:00-${String(end + 1).padStart(2, "0")}:00`,
+  );
+  return labels;
+}
+
+function getDayScheduleLines(daySlots) {
+  if (!daySlots.length) return [];
+  if (isFullHoliday(daySlots)) return ["(휴무)"];
+  const workingHours = daySlots
+    .filter((slot) => ["available", "booked"].includes(slotStatus(slot)))
+    .map((slot) => Number(slot.start_time.slice(0, 2)));
+  return buildRangeLabels(workingHours);
+}
+
+function summarizeManualDraft(draft) {
+  const parts = draft
+    .map((row, weekday) => {
+      if (row.mode === "off") return `${WORKDAY_NAMES[weekday]} 휴무`;
+      if (row.mode !== "available") return null;
+      const base = `${WORKDAY_NAMES[weekday]} ${row.startTime}-${row.endTime}`;
+      if (row.breakEnabled && row.breakEnd > row.breakStart) {
+        return `${base}, ${row.breakStart}-${row.breakEnd} 휴식`;
+      }
+      return base;
+    })
+    .filter(Boolean);
+
+  return parts.length ? parts.join(" / ") : "설정된 수동 스케줄이 없습니다.";
+}
+
+function buildManualDraftFromPlan(plan) {
+  const draft = Array.from({ length: 7 }, () => defaultManualRow());
+
+  (plan?.available_rules || []).forEach((rule) => {
+    (rule.weekdays || []).forEach((weekday) => {
+      if (weekday < 0 || weekday > 6) return;
+      draft[weekday] = {
+        ...draft[weekday],
+        mode: "available",
+        startTime: rule.start_time || draft[weekday].startTime,
+        endTime: rule.end_time || draft[weekday].endTime,
+      };
+    });
+  });
+
+  (plan?.full_day_off_rules || []).forEach((rule) => {
+    (rule.weekdays || []).forEach((weekday) => {
+      if (weekday < 0 || weekday > 6) return;
+      draft[weekday] = { ...draft[weekday], mode: "off" };
+    });
+  });
+
+  (plan?.partial_unavailable_rules || []).forEach((rule) => {
+    (rule.weekdays || []).forEach((weekday) => {
+      if (weekday < 0 || weekday > 6) return;
+      draft[weekday] = {
+        ...draft[weekday],
+        breakEnabled: true,
+        breakStart: rule.start_time || draft[weekday].breakStart,
+        breakEnd: rule.end_time || draft[weekday].breakEnd,
+      };
+    });
+  });
+
+  return draft;
+}
+
+function draftToManualPlan(draft) {
+  const available_rules = [];
+  const full_day_off_rules = [];
+  const partial_unavailable_rules = [];
+
+  draft.forEach((row, weekday) => {
+    if (row.mode === "available") {
+      available_rules.push({
+        weekdays: [weekday],
+        dates: [],
+        start_time: row.startTime,
+        end_time: row.endTime,
+      });
+      if (row.breakEnabled && row.breakEnd > row.breakStart) {
+        partial_unavailable_rules.push({
+          weekdays: [weekday],
+          dates: [],
+          start_time: row.breakStart,
+          end_time: row.breakEnd,
+        });
+      }
+      return;
+    }
+
+    if (row.mode === "off") {
+      full_day_off_rules.push({
+        weekdays: [weekday],
+        dates: [],
+        start_time: "09:00",
+        end_time: "22:00",
+      });
+    }
+  });
+
+  return {
+    available_rules,
+    full_day_off_rules,
+    partial_unavailable_rules,
+  };
+}
+
+function buildDraftFromSlots(visibleSlots, monthValue) {
+  const draft = Array.from({ length: 7 }, () => defaultManualRow());
+  const monthSlots = visibleSlots.filter((slot) =>
+    slot.date.startsWith(monthValue),
+  );
+  const datesByWeekday = new Map();
+
+  monthSlots.forEach((slot) => {
+    const weekday = new Date(`${slot.date}T00:00:00`).getDay();
+    const workdayIndex = (weekday + 6) % 7;
+    if (!datesByWeekday.has(workdayIndex)) {
+      datesByWeekday.set(workdayIndex, new Map());
+    }
+    const perDate = datesByWeekday.get(workdayIndex);
+    if (!perDate.has(slot.date)) {
+      perDate.set(slot.date, []);
+    }
+    perDate.get(slot.date).push(slot);
+  });
+
+  datesByWeekday.forEach((perDate, weekday) => {
+    const workingHours = new Set();
+    const blockedHours = new Set();
+    let allHoliday = perDate.size > 0;
+
+    [...perDate.values()].forEach((daySlots) => {
+      const holiday = isFullHoliday(daySlots);
+      if (!holiday) allHoliday = false;
+      daySlots.forEach((slot) => {
+        const hour = Number(slot.start_time.slice(0, 2));
+        if (["available", "booked"].includes(slotStatus(slot))) {
+          workingHours.add(hour);
+        }
+        if (slotStatus(slot) === "blocked" && !holiday) {
+          blockedHours.add(hour);
+        }
+      });
+    });
+
+    if (allHoliday) {
+      draft[weekday] = { ...draft[weekday], mode: "off" };
+      return;
+    }
+
+    if (workingHours.size) {
+      const sorted = [...workingHours].sort((left, right) => left - right);
+      draft[weekday] = {
+        ...draft[weekday],
+        mode: "available",
+        startTime: `${String(sorted[0]).padStart(2, "0")}:00`,
+        endTime: `${String(sorted[sorted.length - 1] + 1).padStart(2, "0")}:00`,
+      };
+    }
+
+    if (blockedHours.size) {
+      const sorted = [...blockedHours].sort((left, right) => left - right);
+      draft[weekday] = {
+        ...draft[weekday],
+        breakEnabled: true,
+        breakStart: `${String(sorted[0]).padStart(2, "0")}:00`,
+        breakEnd: `${String(sorted[sorted.length - 1] + 1).padStart(2, "0")}:00`,
+      };
+    }
+  });
+
+  return draft;
+}
+
+function BriefingPanel({ slot }) {
+  if (!slot.briefing_report) return null;
+
   return (
-    <div className="mt-3 space-y-2 rounded-xl bg-primary-50 p-3">
-      <p className="text-xs font-semibold text-primary-700">LLM 요약</p>
-      <div className="rounded-lg bg-white p-3 text-xs text-slate-600">
-        <p className="font-medium text-slate-700">예약자</p>
-        <p className="mt-1">{slot.booked_by_name || "수강생"}</p>
-      </div>
-      <div className="rounded-lg bg-white p-3 text-xs text-slate-600">
-        <p className="font-medium text-slate-700">공부 내용</p>
-        <p className="mt-1 break-words">
-          {slot.booking_description || "내용 없음"}
-        </p>
-      </div>
-      <div className="rounded-lg bg-white p-3 text-xs text-slate-600">
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
         <p className="font-medium text-slate-700">핵심 필요 내용</p>
         <p className="mt-1 break-words">{slot.briefing_report.core_need}</p>
       </div>
-      <div className="rounded-lg bg-white p-3 text-xs text-slate-600">
+      <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
         <p className="font-medium text-slate-700">추천 지도 방향</p>
         <p className="mt-1 break-words">
           {slot.briefing_report.ai_recommendation}
@@ -75,65 +307,33 @@ function BriefingPanel({ slot }) {
 export default function TADashboard() {
   const { user } = useAuth();
   const detailSectionRef = useRef(null);
+  const today = new Date();
+  const todayKey = fmt(today.getFullYear(), today.getMonth(), today.getDate());
+
   const [slots, setSlots] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState("info");
-  const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const lastNextMonthDate = new Date(
-    today.getFullYear(),
-    today.getMonth() + 2,
-    0,
+  const [assistantMonth, setAssistantMonth] = useState(
+    formatMonthValue(today.getFullYear(), today.getMonth()),
   );
-  const [startDate, setStartDate] = useState(
-    fmt(
-      nextMonthDate.getFullYear(),
-      nextMonthDate.getMonth(),
-      nextMonthDate.getDate(),
-    ),
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantMessages, setAssistantMessages] = useState([
+    {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "월을 고른 뒤 자연어로 보내면 제가 바로 이해한 내용을 짧게 정리하고 적용 여부를 먼저 확인합니다.",
+    },
+  ]);
+  const [pendingRequest, setPendingRequest] = useState(null);
+  const [loadingAssistant, setLoadingAssistant] = useState(false);
+  const [manualDraft, setManualDraft] = useState(
+    Array.from({ length: 7 }, () => defaultManualRow()),
   );
-  const [endDate, setEndDate] = useState(
-    fmt(
-      lastNextMonthDate.getFullYear(),
-      lastNextMonthDate.getMonth(),
-      lastNextMonthDate.getDate(),
-    ),
-  );
-  const [selectedWeekdays, setSelectedWeekdays] = useState([1, 2, 3, 4, 5]);
-  const [unavailableStartDate, setUnavailableStartDate] = useState(
-    fmt(
-      nextMonthDate.getFullYear(),
-      nextMonthDate.getMonth(),
-      nextMonthDate.getDate(),
-    ),
-  );
-  const [unavailableEndDate, setUnavailableEndDate] = useState(
-    fmt(
-      lastNextMonthDate.getFullYear(),
-      lastNextMonthDate.getMonth(),
-      lastNextMonthDate.getDate(),
-    ),
-  );
-  const [unavailableWeekdays, setUnavailableWeekdays] = useState([0, 6]);
-  const [breakStartTime, setBreakStartTime] = useState("12:00");
-  const [breakEndTime, setBreakEndTime] = useState("13:00");
-  const [saving, setSaving] = useState(false);
-  const [initializing, setInitializing] = useState(false);
-  const [showBaseScheduleForm, setShowBaseScheduleForm] = useState(false);
-  const [showUnavailableForm, setShowUnavailableForm] = useState(false);
-  const [unavailableMode, setUnavailableMode] = useState("holiday");
-
-  const hourOptions = useMemo(
-    () =>
-      Array.from(
-        { length: 14 },
-        (_, index) => `${String(9 + index).padStart(2, "0")}:00`,
-      ),
-    [],
-  );
+  const [manualEditorOpen, setManualEditorOpen] = useState(false);
 
   const setMessage = useCallback((message, type = "info") => {
     setNotice(message);
@@ -142,21 +342,34 @@ export default function TADashboard() {
 
   const fetchSlots = useCallback(async () => {
     const res = await fetch("/api/ta/slots").catch(() => null);
-    if (res?.ok) {
-      setSlots(await res.json());
+    if (!res?.ok) {
+      setMessage("스케줄을 불러오지 못했습니다.", "error");
       return;
     }
-    setMessage("스케줄을 불러오지 못했습니다.", "error");
+    setSlots(await res.json());
   }, [setMessage]);
 
   useEffect(() => {
     fetchSlots();
   }, [fetchSlots]);
 
+  useEffect(() => {
+    const [year, month] = assistantMonth.split("-").map(Number);
+    if (!year || !month) return;
+    setViewYear(year);
+    setViewMonth(month - 1);
+  }, [assistantMonth]);
+
   const visibleSlots = useMemo(
     () => slots.filter((slot) => slot.ta_id === user?.id),
     [slots, user?.id],
   );
+
+  useEffect(() => {
+    if (!pendingRequest) {
+      setManualDraft(buildDraftFromSlots(visibleSlots, assistantMonth));
+    }
+  }, [assistantMonth, pendingRequest, visibleSlots]);
 
   const slotsByDate = useMemo(() => {
     const grouped = {};
@@ -167,8 +380,6 @@ export default function TADashboard() {
     return grouped;
   }, [visibleSlots]);
 
-  const selectedDateSlots = selectedDate ? slotsByDate[selectedDate] || [] : [];
-
   const currentMonthSlots = useMemo(
     () =>
       visibleSlots.filter((slot) => {
@@ -178,151 +389,182 @@ export default function TADashboard() {
           slotDate.getMonth() === viewMonth
         );
       }),
-    [visibleSlots, viewMonth, viewYear],
+    [viewMonth, viewYear, visibleSlots],
   );
 
   const summary = useMemo(
     () => ({
-      blocked: currentMonthSlots.filter(
-        (slot) => slotStatus(slot) === "blocked",
-      ).length,
       booked: currentMonthSlots.filter((slot) => slotStatus(slot) === "booked")
         .length,
     }),
     [currentMonthSlots],
   );
 
-  const cells = getMonthDays(viewYear, viewMonth);
-  const selectedDateHasBlocked = selectedDateSlots.some(
-    (slot) => slotStatus(slot) === "blocked",
+  const selectedBookedSlots = useMemo(
+    () =>
+      (slotsByDate[selectedDate] || [])
+        .filter((slot) => slotStatus(slot) === "booked")
+        .sort((left, right) => left.start_time.localeCompare(right.start_time)),
+    [selectedDate, slotsByDate],
   );
 
-  const removeSlotsLocally = useCallback((slotIds) => {
-    setSlots((prev) => prev.filter((slot) => !slotIds.includes(slot.id)));
-  }, []);
+  const manualSummary = useMemo(
+    () => summarizeManualDraft(manualDraft),
+    [manualDraft],
+  );
 
-  const initializeBaseSchedule = async () => {
-    if (!selectedWeekdays.length || !user?.id) return;
-    setInitializing(true);
-    setMessage("");
-    const res = await fetch("/api/ta/slots/base-template", {
+  const cells = getMonthDays(viewYear, viewMonth);
+
+  const previewScheduleRequest = async (
+    message,
+    manualPlan = null,
+    targetMonth = assistantMonth,
+  ) => {
+    if (!user?.id || loadingAssistant) return null;
+    setLoadingAssistant(true);
+    const res = await fetch("/api/ta/schedule-assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ta_id: user.id,
         ta_name: user.name,
-        start_date: startDate,
-        end_date: endDate,
-        weekdays: selectedWeekdays.map((value) => (value + 6) % 7),
+        target_month: targetMonth,
+        message,
+        manual_plan: manualPlan,
+        apply: false,
       }),
     }).catch(() => null);
-    setInitializing(false);
-    if (!res?.ok) {
-      setMessage("기본 가능시간 초기 설정에 실패했습니다.", "error");
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    setMessage(
-      data.created_count
-        ? `기본 가능시간 ${data.created_count}개를 생성했습니다.`
-        : "이미 동일한 기본 가능시간이 등록되어 있습니다.",
-      "success",
-    );
-    setShowBaseScheduleForm(false);
-    fetchSlots();
-  };
+    setLoadingAssistant(false);
 
-  const saveUnavailable = async () => {
-    if (!unavailableWeekdays.length || !user?.id) return;
-    if (unavailableMode === "break" && breakEndTime <= breakStartTime) {
-      setMessage("휴식 시간 종료는 시작보다 늦어야 합니다.", "error");
-      return;
-    }
-
-    setSaving(true);
-    setMessage("");
-    const startHour =
-      unavailableMode === "holiday" ? 9 : Number(breakStartTime.slice(0, 2));
-    const endHourExclusive =
-      unavailableMode === "holiday" ? 22 : Number(breakEndTime.slice(0, 2));
-    const requests = Array.from(
-      { length: Math.max(0, endHourExclusive - startHour) },
-      (_, index) => {
-        const hour = startHour + index;
-        return fetch("/api/ta/slots/bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ta_id: user.id,
-            ta_name: user.name,
-            start_date: unavailableStartDate,
-            end_date: unavailableEndDate,
-            weekdays: unavailableWeekdays.map((value) => (value + 6) % 7),
-            start_time: `${String(hour).padStart(2, "0")}:00`,
-            end_time: `${String(hour + 1).padStart(2, "0")}:00`,
-            slot_type: "blocked",
-            unavailable_reason: null,
-          }),
-        }).catch(() => null);
-      },
-    );
-
-    const results = await Promise.all(requests);
-    setSaving(false);
-    const succeeded = results.filter((response) => response?.ok).length;
-    if (!succeeded) {
-      setMessage("불가 시간 등록에 실패했습니다.", "error");
-      return;
-    }
-    setMessage(
-      unavailableMode === "holiday"
-        ? "선택한 기간에 휴무 시간을 등록했습니다."
-        : "선택한 기간에 휴식 시간을 등록했습니다.",
-      "success",
-    );
-    setShowUnavailableForm(false);
-    fetchSlots();
-  };
-
-  const clearBlockedForDate = async () => {
-    if (!selectedDate) return;
-    const blockedSlots = (slotsByDate[selectedDate] || []).filter(
-      (slot) => slotStatus(slot) === "blocked",
-    );
-    if (!blockedSlots.length) {
-      setMessage("선택한 날짜에 취소할 불가 시간이 없습니다.", "info");
-      return;
-    }
-
-    const results = await Promise.all(
-      blockedSlots.map((slot) =>
-        fetch(`/api/ta/slots/${slot.id}`, { method: "DELETE" }).catch(
-          () => null,
-        ),
-      ),
-    );
-    if (results.some((response) => !response?.ok)) {
-      setMessage("일부 불가 시간 취소에 실패했습니다.", "error");
-      fetchSlots();
-      return;
-    }
-    removeSlotsLocally(blockedSlots.map((slot) => slot.id));
-    setMessage("선택한 날짜의 불가 시간을 취소했습니다.", "success");
-    fetchSlots();
-  };
-
-  const deleteSlot = async (slotId) => {
-    const res = await fetch(`/api/ta/slots/${slotId}`, {
-      method: "DELETE",
-    }).catch(() => null);
     if (!res?.ok) {
       const data = res ? await res.json().catch(() => ({})) : {};
-      setMessage(data?.detail || "삭제에 실패했습니다.", "error");
+      setMessage(data?.detail || "스케줄 해석에 실패했습니다.", "error");
+      return null;
+    }
+
+    return res.json();
+  };
+
+  const applyScheduleRequest = async ({ message, manualPlan, targetMonth }) => {
+    if (!user?.id || loadingAssistant) return;
+
+    setLoadingAssistant(true);
+    const res = await fetch("/api/ta/schedule-assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ta_id: user.id,
+        ta_name: user.name,
+        target_month: targetMonth,
+        message,
+        manual_plan: manualPlan,
+        apply: true,
+      }),
+    }).catch(() => null);
+    setLoadingAssistant(false);
+
+    if (!res?.ok) {
+      const data = res ? await res.json().catch(() => ({})) : {};
+      setMessage(data?.detail || "적용에 실패했습니다.", "error");
       return;
     }
-    removeSlotsLocally([slotId]);
-    setMessage("선택한 시간을 삭제했습니다.", "success");
+
+    const data = await res.json();
+    setPendingRequest(null);
+    setMessage(
+      "월간 스케줄을 적용했습니다. 기존 예약 기록은 유지됩니다.",
+      "success",
+    );
+    setAssistantMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-apply-${Date.now()}`,
+        role: "assistant",
+        content: `${data.summary}\n적용 완료`,
+      },
+    ]);
     fetchSlots();
+  };
+
+  const submitAssistantMessage = async () => {
+    const message = assistantInput.trim();
+    if (!message) return;
+
+    setAssistantMessages((prev) => [
+      ...prev,
+      { id: `user-${Date.now()}`, role: "user", content: message },
+    ]);
+
+    const data = await previewScheduleRequest(message, null, assistantMonth);
+    if (!data) return;
+
+    setPendingRequest({
+      targetMonth: assistantMonth,
+      message,
+      manualPlan: data.plan,
+      summary: data.summary,
+    });
+    setManualDraft(buildManualDraftFromPlan(data.plan));
+    setAssistantMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: `${data.summary}\n적용하시겠습니까?`,
+      },
+    ]);
+    setAssistantInput("");
+  };
+
+  const previewManualDraft = async () => {
+    const manualPlan = draftToManualPlan(manualDraft);
+    const data = await previewScheduleRequest(
+      "manual",
+      manualPlan,
+      assistantMonth,
+    );
+    if (!data) return;
+
+    setPendingRequest({
+      targetMonth: assistantMonth,
+      message: "manual",
+      manualPlan,
+      summary: data.summary,
+    });
+    setAssistantMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-manual-${Date.now()}`,
+        role: "assistant",
+        content: `${data.summary}\n수정안입니다. 적용하시겠습니까?`,
+      },
+    ]);
+  };
+
+  const applyPendingRequest = async () => {
+    if (!pendingRequest) return;
+    await applyScheduleRequest({
+      message: pendingRequest.message,
+      manualPlan: pendingRequest.manualPlan,
+      targetMonth: pendingRequest.targetMonth,
+    });
+  };
+
+  const applyManualDraftDirectly = async () => {
+    const manualPlan = draftToManualPlan(manualDraft);
+    await applyScheduleRequest({
+      message: "manual",
+      manualPlan,
+      targetMonth: assistantMonth,
+    });
+  };
+
+  const updateManualRow = (weekday, nextRow) => {
+    setManualDraft((prev) =>
+      prev.map((row, index) =>
+        index === weekday ? { ...row, ...nextRow } : row,
+      ),
+    );
   };
 
   return (
@@ -331,8 +573,8 @@ export default function TADashboard() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">조교 스케줄</h1>
           <p className="text-sm text-slate-500">
-            기본 가능시간은 09:00-22:00, 1시간 단위로 일괄 생성하고 휴무와 휴식
-            시간을 간단히 설정합니다.
+            챗봇은 먼저 이해한 내용을 확인받고, 수동 스케줄 설정은 별도로 접어둘
+            수 있습니다.
           </p>
         </div>
         <button
@@ -351,9 +593,9 @@ export default function TADashboard() {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between">
             <button
               onClick={() => {
                 if (viewMonth === 0) {
@@ -384,25 +626,22 @@ export default function TADashboard() {
               <ChevronRight size={18} />
             </button>
           </div>
-          <div className="mb-4 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-amber-50 p-4 text-center">
-              <p className="text-2xl font-bold text-amber-700">
-                {summary.blocked}
-              </p>
-              <p className="mt-1 text-xs text-amber-700">휴무 / 불가</p>
-            </div>
-            <div className="rounded-xl bg-primary-50 p-4 text-center">
-              <p className="text-2xl font-bold text-primary-700">
-                {summary.booked}
-              </p>
-              <p className="mt-1 text-xs text-primary-700">예약 완료</p>
-            </div>
+
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-medium text-slate-500">
+              이번 달 예약 완료
+            </p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {summary.booked}
+            </p>
           </div>
+
           <div className="mb-2 grid grid-cols-7 gap-2 text-center text-xs text-slate-400">
             {WEEKDAY_NAMES.map((day) => (
               <div key={day}>{day}</div>
             ))}
           </div>
+
           <div className="grid grid-cols-7 gap-2">
             {cells.map((day, index) => {
               if (!day) {
@@ -413,376 +652,484 @@ export default function TADashboard() {
                   />
                 );
               }
+
               const dateKey = fmt(viewYear, viewMonth, day);
               const daySlots = slotsByDate[dateKey] || [];
-              const booked = daySlots.filter(
+              const bookedCount = daySlots.filter(
                 (slot) => slotStatus(slot) === "booked",
               ).length;
-              const blocked = daySlots.filter(
-                (slot) => slotStatus(slot) === "blocked",
-              ).length;
-              const available = daySlots.filter(
-                (slot) => slotStatus(slot) === "available",
-              ).length;
-              const baseClass =
-                selectedDate === dateKey
-                  ? "border-primary-400 bg-primary-50"
-                  : blocked > 0
-                    ? "border-amber-200 bg-amber-50/70 hover:border-amber-300"
-                    : available > 0
-                      ? "border-emerald-200 bg-emerald-50/50 hover:border-emerald-300"
-                      : "border-slate-200 bg-slate-50 hover:border-primary-200 hover:bg-white";
+              const scheduleLines = getDayScheduleLines(daySlots);
+              const fullHoliday = isFullHoliday(daySlots);
+              const hoverLines = fullHoliday
+                ? ["종일 휴무"]
+                : [
+                    ...scheduleLines.map((line) => `예약 가능 ${line}`),
+                    ...(bookedCount > 0 ? [`예약 ${bookedCount}건`] : []),
+                  ];
+              const isToday = dateKey === todayKey;
+              const isSelected = selectedDate === dateKey;
+
+              const baseClass = isSelected
+                ? "border-primary-500 bg-primary-50"
+                : fullHoliday
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : isToday
+                    ? "border-slate-800 bg-slate-100"
+                    : "border-slate-200 bg-white hover:border-slate-300";
 
               return (
-                <button
-                  key={dateKey}
-                  onClick={() => {
-                    setSelectedDate(dateKey);
-                    window.requestAnimationFrame(() => {
-                      detailSectionRef.current?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
+                <div key={dateKey} className="group relative">
+                  <button
+                    onClick={() => {
+                      setSelectedDate(dateKey);
+                      window.requestAnimationFrame(() => {
+                        detailSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
                       });
-                    });
-                  }}
-                  className={`h-24 rounded-xl border p-3 text-left transition-colors ${baseClass}`}
-                >
-                  <div className="text-sm font-semibold text-slate-700">
-                    {day}
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    {blocked > 0
-                      ? `불가 ${blocked}`
-                      : booked > 0
-                        ? `예약 ${booked}`
-                        : available > 0
-                          ? `가능 ${available}`
-                          : "등록 없음"}
-                  </div>
-                  <div className="mt-3 flex gap-1">
-                    {available > 0 && (
-                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    )}
-                    {blocked > 0 && (
-                      <span className="h-2 w-2 rounded-full bg-amber-400" />
-                    )}
-                    {booked > 0 && (
-                      <span className="h-2 w-2 rounded-full bg-primary-500" />
-                    )}
-                  </div>
-                </button>
+                    }}
+                    className={`h-24 w-full overflow-hidden rounded-xl border p-3 text-left transition-colors ${baseClass}`}
+                  >
+                    <div className="text-sm font-semibold text-slate-700">
+                      {day}
+                    </div>
+                    <div className="mt-2 space-y-1 overflow-hidden text-[10px] leading-3 text-slate-500">
+                      {fullHoliday ? (
+                        <p className="truncate">(휴무)</p>
+                      ) : scheduleLines.length ? (
+                        <>
+                          {scheduleLines.slice(0, 2).map((line) => (
+                            <p key={`${dateKey}-${line}`} className="truncate">
+                              {line}
+                            </p>
+                          ))}
+                          {scheduleLines.length > 2 && (
+                            <p className="truncate text-[9px] text-slate-400">
+                              +{scheduleLines.length - 2}개 더 보기
+                            </p>
+                          )}
+                        </>
+                      ) : bookedCount > 0 ? (
+                        <p className="truncate">예약 {bookedCount}</p>
+                      ) : null}
+                    </div>
+                  </button>
+
+                  {hoverLines.length > 0 && (
+                    <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-44 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-xl border border-slate-200 bg-slate-950/95 px-3 py-2 text-[11px] leading-4 text-white opacity-0 shadow-2xl transition-all duration-150 group-hover:opacity-100 md:block">
+                      <p className="mb-1 font-semibold text-slate-200">
+                        {viewMonth + 1}월 {day}일
+                      </p>
+                      <div className="space-y-1">
+                        {hoverLines.map((line) => (
+                          <p
+                            key={`${dateKey}-hover-${line}`}
+                            className="break-words"
+                          >
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
         </section>
 
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <button
-              onClick={() => setShowBaseScheduleForm((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:border-slate-300"
-            >
-              <div>
-                <p className="text-sm font-semibold text-slate-700">
-                  기본 가능시간 초기 설정
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {DEFAULT_START_HOUR}-{DEFAULT_END_HOUR}, 1시간 단위 기본
-                  시간표 생성
-                </p>
-              </div>
-              {showBaseScheduleForm ? (
-                <ChevronUp size={18} className="text-slate-400" />
-              ) : (
-                <ChevronDown size={18} className="text-slate-400" />
-              )}
-            </button>
-            {showBaseScheduleForm && (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-xs text-slate-500">시작 날짜</p>
-                    <input
-                      type="date"
-                      min={today.toISOString().slice(0, 10)}
-                      value={startDate}
-                      onChange={(event) => setStartDate(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs text-slate-500">종료 날짜</p>
-                    <input
-                      type="date"
-                      min={startDate}
-                      value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <p className="mb-2 text-xs text-slate-500">기본 등록 요일</p>
-                  <div className="flex flex-wrap gap-2">
-                    {WEEKDAY_NAMES.map((day, index) => (
-                      <button
-                        key={day}
-                        onClick={() =>
-                          setSelectedWeekdays((prev) =>
-                            prev.includes(index)
-                              ? prev.filter((value) => value !== index)
-                              : [...prev, index],
-                          )
-                        }
-                        className={`rounded-full px-4 py-2 text-sm transition-colors ${selectedWeekdays.includes(index) ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  onClick={initializeBaseSchedule}
-                  disabled={initializing || !selectedWeekdays.length}
-                  className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
-                >
-                  {initializing ? "초기 설정 중..." : "기본 가능시간 초기 설정"}
-                </button>
-              </div>
-            )}
-          </section>
+        <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Bot size={16} className="text-primary-500" />
+              월간 스케줄 챗봇
+            </div>
+            <input
+              type="month"
+              value={assistantMonth}
+              onChange={(event) => {
+                setAssistantMonth(event.target.value);
+                setPendingRequest(null);
+              }}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none"
+            />
+          </div>
 
-          <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
-            <button
-              onClick={() => setShowUnavailableForm((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-white/70 px-4 py-3 text-left transition-colors hover:border-amber-300"
-            >
-              <div>
-                <p className="text-sm font-semibold text-amber-900">
-                  휴무 / 불가 시간 설정
-                </p>
-                <p className="mt-1 text-xs text-amber-800">
-                  전체 휴무 또는 짧은 휴식 시간을 토글로 설정합니다.
-                </p>
-              </div>
-              {showUnavailableForm ? (
-                <ChevronUp size={18} className="text-amber-700" />
-              ) : (
-                <ChevronDown size={18} className="text-amber-700" />
-              )}
-            </button>
-            {showUnavailableForm && (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-white p-4">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    onClick={() => setUnavailableMode("holiday")}
-                    className={`rounded-xl px-4 py-3 text-sm font-medium ${unavailableMode === "holiday" ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-900"}`}
-                  >
-                    휴무
-                  </button>
-                  <button
-                    onClick={() => setUnavailableMode("break")}
-                    className={`rounded-xl px-4 py-3 text-sm font-medium ${unavailableMode === "break" ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-900"}`}
-                  >
-                    휴식 시간
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-xs text-amber-800">시작 날짜</p>
-                    <input
-                      type="date"
-                      min={today.toISOString().slice(0, 10)}
-                      value={unavailableStartDate}
-                      onChange={(event) =>
-                        setUnavailableStartDate(event.target.value)
-                      }
-                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs text-amber-800">종료 날짜</p>
-                    <input
-                      type="date"
-                      min={unavailableStartDate}
-                      value={unavailableEndDate}
-                      onChange={(event) =>
-                        setUnavailableEndDate(event.target.value)
-                      }
-                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <p className="mb-2 text-xs text-amber-800">적용 요일</p>
-                  <div className="flex flex-wrap gap-2">
-                    {WEEKDAY_NAMES.map((day, index) => (
-                      <button
-                        key={`unavailable-${day}`}
-                        onClick={() =>
-                          setUnavailableWeekdays((prev) =>
-                            prev.includes(index)
-                              ? prev.filter((value) => value !== index)
-                              : [...prev, index],
-                          )
-                        }
-                        className={`rounded-full px-4 py-2 text-sm transition-colors ${unavailableWeekdays.includes(index) ? "bg-amber-500 text-white" : "bg-white text-amber-800"}`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {unavailableMode === "break" && (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="mb-1 text-xs text-amber-800">휴식 시작</p>
-                      <select
-                        value={breakStartTime}
-                        onChange={(event) =>
-                          setBreakStartTime(event.target.value)
-                        }
-                        className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                      >
-                        {hourOptions.slice(0, -1).map((time) => (
-                          <option key={`start-${time}`} value={time}>
-                            {time}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs text-amber-800">휴식 종료</p>
-                      <select
-                        value={breakEndTime}
-                        onChange={(event) =>
-                          setBreakEndTime(event.target.value)
-                        }
-                        className="w-full rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm outline-none"
-                      >
-                        {hourOptions.slice(1).map((time) => (
-                          <option key={`end-${time}`} value={time}>
-                            {time}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
-                <button
-                  onClick={saveUnavailable}
-                  disabled={saving || !unavailableWeekdays.length}
-                  className="mt-4 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-40"
+          <div className="max-h-[200px] space-y-3 overflow-y-auto rounded-2xl bg-slate-50 p-4">
+            {assistantMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
                 >
-                  {saving
-                    ? "저장 중..."
-                    : unavailableMode === "holiday"
-                      ? "휴무 등록"
-                      : "휴식 시간 등록"}
-                </button>
+                  {message.content}
+                </div>
               </div>
-            )}
-          </section>
+            ))}
+          </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-start gap-3">
-              <Info size={18} className="mt-0.5 text-primary-500" />
-              <div>
-                <p className="text-sm font-semibold text-slate-700">
-                  향후 확장 가능성
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  나중에는 수강생이 조교를 직접 선택하거나, 챗봇이 보충 요청
-                  내용을 분석해 조교별 가능 영역에 맞춰 최적 조교를 자동
-                  배정하는 흐름으로 확장할 수 있습니다.
-                </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <button
+              onClick={() =>
+                setAssistantInput(
+                  `나 ${Number(assistantMonth.slice(5))}월에 토일 휴무, 나머지 요일은 09시부터 16시까지 예약가능`,
+                )
+              }
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-primary-300 hover:text-primary-700"
+            >
+              예시 넣기
+            </button>
+            <textarea
+              value={assistantInput}
+              onChange={(event) => setAssistantInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submitAssistantMessage();
+                }
+              }}
+              placeholder="예: 나 4월에 토일 휴무, 나머지 요일은 09시부터 16시까지 예약가능"
+              className="mt-3 min-h-[110px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none"
+            />
+            <button
+              onClick={submitAssistantMessage}
+              disabled={!assistantInput.trim() || loadingAssistant}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary-500 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:opacity-40"
+            >
+              <Send size={16} />
+              {loadingAssistant ? "이해 중..." : "챗봇에게 보내기"}
+            </button>
+          </div>
+
+          {pendingRequest && (
+            <div className="rounded-2xl border border-primary-200 bg-primary-50 p-4 text-sm text-primary-800">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 size={16} className="mt-0.5" />
+                <p>{pendingRequest.summary}</p>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={applyPendingRequest}
+                  disabled={loadingAssistant}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+                >
+                  적용
+                </button>
+                <button
+                  onClick={() => setPendingRequest(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300"
+                >
+                  취소
+                </button>
               </div>
             </div>
-          </section>
-        </div>
+          )}
+
+          <div className="rounded-2xl border border-primary-200 bg-primary-50 p-4 shadow-[0_18px_45px_-35px_rgba(59,130,246,0.65)] transition-shadow hover:shadow-[0_24px_50px_-32px_rgba(59,130,246,0.8)]">
+            <button
+              onClick={() => setManualEditorOpen((prev) => !prev)}
+              className="group flex w-full items-center justify-between gap-4 rounded-2xl text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-primary-800">
+                  수동 스케줄 설정
+                </p>
+                <p className="mt-1 text-xs leading-5 text-primary-700">
+                  {manualSummary}
+                </p>
+                <p className="mt-2 text-[11px] font-medium text-primary-500">
+                  카드 전체를 눌러 펼치고 접을 수 있습니다.
+                </p>
+              </div>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-primary-200 bg-white px-3 py-2 text-xs font-semibold text-primary-700 shadow-sm transition-all group-hover:border-primary-300 group-hover:bg-white/95">
+                <span>{manualEditorOpen ? "접기" : "펼쳐보기"}</span>
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${manualEditorOpen ? "rotate-180" : "rotate-0"}`}
+                />
+              </div>
+            </button>
+
+            {manualEditorOpen && (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs leading-5 text-slate-500">
+                    요일별로 직접 수정하고, 미리보기 또는 바로 적용을
+                    선택하세요.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setPendingRequest(null);
+                      setManualDraft(
+                        buildDraftFromSlots(visibleSlots, assistantMonth),
+                      );
+                    }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300"
+                  >
+                    현재 적용값 불러오기
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {manualDraft.map((row, weekday) => (
+                    <div
+                      key={WORKDAY_NAMES[weekday]}
+                      className="rounded-2xl border border-slate-200 bg-white p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-slate-700">
+                          {WORKDAY_NAMES[weekday]}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              updateManualRow(weekday, { mode: "none" })
+                            }
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${row.mode === "none" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
+                          >
+                            설정 없음
+                          </button>
+                          <button
+                            onClick={() =>
+                              updateManualRow(weekday, { mode: "available" })
+                            }
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${row.mode === "available" ? "bg-primary-500 text-white" : "bg-slate-100 text-slate-600"}`}
+                          >
+                            예약 가능
+                          </button>
+                          <button
+                            onClick={() =>
+                              updateManualRow(weekday, { mode: "off" })
+                            }
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${row.mode === "off" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-600"}`}
+                          >
+                            전체 휴무
+                          </button>
+                        </div>
+                      </div>
+
+                      {row.mode === "available" && (
+                        <div className="mt-4 space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="text-xs text-slate-500">
+                              시작 시간
+                              <select
+                                value={row.startTime}
+                                onChange={(event) => {
+                                  const nextStart = event.target.value;
+                                  updateManualRow(weekday, {
+                                    startTime: nextStart,
+                                    endTime:
+                                      row.endTime <= nextStart
+                                        ? nextHour(nextStart)
+                                        : row.endTime,
+                                  });
+                                }}
+                                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none"
+                              >
+                                {TIME_OPTIONS.slice(0, -1).map((time) => (
+                                  <option
+                                    key={`${WORKDAY_NAMES[weekday]}-start-${time}`}
+                                    value={time}
+                                  >
+                                    {time}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-xs text-slate-500">
+                              종료 시간
+                              <select
+                                value={row.endTime}
+                                onChange={(event) => {
+                                  const nextEnd = event.target.value;
+                                  updateManualRow(weekday, {
+                                    endTime: nextEnd,
+                                    startTime:
+                                      nextEnd <= row.startTime
+                                        ? previousHour(nextEnd)
+                                        : row.startTime,
+                                  });
+                                }}
+                                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none"
+                              >
+                                {TIME_OPTIONS.slice(1).map((time) => (
+                                  <option
+                                    key={`${WORKDAY_NAMES[weekday]}-end-${time}`}
+                                    value={time}
+                                  >
+                                    {time}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-medium text-slate-600">
+                                휴식 시간
+                              </p>
+                              <button
+                                onClick={() =>
+                                  updateManualRow(weekday, {
+                                    breakEnabled: !row.breakEnabled,
+                                  })
+                                }
+                                className={`rounded-full px-3 py-1.5 text-xs font-medium ${row.breakEnabled ? "bg-amber-500 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
+                              >
+                                {row.breakEnabled ? "사용 중" : "없음"}
+                              </button>
+                            </div>
+                            {row.breakEnabled && (
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <label className="text-xs text-slate-500">
+                                  휴식 시작
+                                  <select
+                                    value={row.breakStart}
+                                    onChange={(event) => {
+                                      const nextStart = event.target.value;
+                                      updateManualRow(weekday, {
+                                        breakStart: nextStart,
+                                        breakEnd:
+                                          row.breakEnd <= nextStart
+                                            ? nextHour(nextStart)
+                                            : row.breakEnd,
+                                      });
+                                    }}
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none"
+                                  >
+                                    {TIME_OPTIONS.slice(0, -1).map((time) => (
+                                      <option
+                                        key={`${WORKDAY_NAMES[weekday]}-break-start-${time}`}
+                                        value={time}
+                                      >
+                                        {time}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="text-xs text-slate-500">
+                                  휴식 종료
+                                  <select
+                                    value={row.breakEnd}
+                                    onChange={(event) => {
+                                      const nextEnd = event.target.value;
+                                      updateManualRow(weekday, {
+                                        breakEnd: nextEnd,
+                                        breakStart:
+                                          nextEnd <= row.breakStart
+                                            ? previousHour(nextEnd)
+                                            : row.breakStart,
+                                      });
+                                    }}
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none"
+                                  >
+                                    {TIME_OPTIONS.slice(1).map((time) => (
+                                      <option
+                                        key={`${WORKDAY_NAMES[weekday]}-break-end-${time}`}
+                                        value={time}
+                                      >
+                                        {time}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={previewManualDraft}
+                    disabled={loadingAssistant}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 disabled:opacity-40"
+                  >
+                    수정안 미리보기
+                  </button>
+                  <button
+                    onClick={applyManualDraftDirectly}
+                    disabled={loadingAssistant}
+                    className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+                  >
+                    바로 적용
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
 
       <section
         ref={detailSectionRef}
         className="rounded-2xl border border-slate-200 bg-white p-5"
       >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <Calendar size={16} className="text-primary-500" />
-            {selectedDate || "날짜를 선택하세요"}
-          </div>
-          {selectedDate && (
-            <button
-              onClick={clearBlockedForDate}
-              disabled={!selectedDateHasBlocked}
-              className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              선택 날짜 불가 시간 취소
-            </button>
-          )}
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <Calendar size={16} className="text-primary-500" />
+          {selectedDate || "날짜를 선택하세요"}
         </div>
+
         {selectedDate ? (
-          selectedDateSlots.length ? (
+          selectedBookedSlots.length ? (
             <div className="space-y-3">
-              {selectedDateSlots.map((slot) => {
-                const status = slotStatus(slot);
-                return (
-                  <div
-                    key={slot.id}
-                    className={`rounded-xl border p-4 ${status === "booked" ? "border-primary-200 bg-primary-50/40" : status === "blocked" ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-slate-50"}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                          <Clock size={14} className="text-slate-400" />
-                          {slot.start_time} - {slot.end_time}
-                        </p>
-                        {status === "booked" && (
-                          <div className="mt-2 space-y-1 text-xs text-slate-600">
-                            <p className="flex items-center gap-1">
-                              <User size={12} className="text-slate-400" />
-                              예약자: {slot.booked_by_name || "수강생"}
-                            </p>
-                            <p>
-                              공부 내용:{" "}
-                              {slot.booking_description || "내용 없음"}
-                            </p>
-                          </div>
-                        )}
-                        {status === "blocked" && (
-                          <p className="mt-2 text-xs text-amber-700">
-                            설정된 불가 시간
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded-full px-2 py-1 text-[11px] ${status === "booked" ? "bg-primary-100 text-primary-700" : status === "blocked" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
-                        >
-                          {status === "booked"
-                            ? "예약 완료"
-                            : status === "blocked"
-                              ? "불가"
-                              : "예약 가능"}
-                        </span>
-                        {status !== "booked" && (
-                          <button
-                            onClick={() => deleteSlot(slot.id)}
-                            className="rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-red-500"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
+              {selectedBookedSlots.map((slot) => (
+                <div
+                  key={slot.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2 text-sm text-slate-600">
+                      <p className="flex items-center gap-2 font-semibold text-slate-800">
+                        <Clock size={14} className="text-slate-400" />
+                        {slot.start_time} - {slot.end_time}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <User size={14} className="text-slate-400" />
+                        {maskName(slot.booked_by_name)}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <Phone size={14} className="text-slate-400" />
+                        {slot.booking_phone || "번호 미입력"}
+                      </p>
                     </div>
-                    {status === "booked" && <BriefingPanel slot={slot} />}
+                    <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700">
+                      예약 완료
+                    </span>
                   </div>
-                );
-              })}
+
+                  <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="text-xs font-medium text-slate-500">
+                      요청 내용
+                    </p>
+                    <p className="mt-1 break-words">
+                      {slot.booking_summary ||
+                        slot.booking_description ||
+                        "내용 없음"}
+                    </p>
+                  </div>
+
+                  <BriefingPanel slot={slot} />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-400">
-              선택한 날짜에 등록된 시간이 없습니다.
+              선택한 날짜에 예약된 학생이 없습니다.
             </div>
           )
         ) : (

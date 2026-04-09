@@ -89,11 +89,13 @@ async def mentor_dashboard(token: str = ""):
     today_curations = store.get_curations(date=today)[:3]
     recent_docs = store.get_mentor_docs(mentor["id"])[:5]
     activity = store.get_recent_chat_activity(mentor["id"], hours=24)[:20]
+    ta_bookings = store.get_ta_bookings_for_mentor(mentor["id"])[:8]
 
     return {
         "today_curations": today_curations,
         "recent_docs": [_serialize_mentor_doc(doc) for doc in recent_docs],
         "recent_activity": activity,
+        "ta_bookings": ta_bookings,
     }
 
 

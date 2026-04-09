@@ -756,16 +756,31 @@ class Store:
     def get_all_slots(self) -> list[dict]:
         return self.schedules
 
-    def book_slot(self, slot_id, student_id, student_name, desc, briefing=None):
+    def book_slot(
+        self,
+        slot_id,
+        student_id,
+        student_name,
+        desc,
+        briefing=None,
+        student_phone=None,
+        summary=None,
+    ):
         for s in self.schedules:
             if (
                 s["id"] == slot_id
                 and s["is_available"]
                 and s.get("slot_type", "available") == "available"
             ):
-                s.update(is_available=False, booked_by=student_id,
-                         booked_by_name=student_name,
-                         booking_description=desc, briefing_report=briefing)
+                s.update(
+                    is_available=False,
+                    booked_by=student_id,
+                    booked_by_name=student_name,
+                    booking_phone=student_phone,
+                    booking_description=desc,
+                    booking_summary=summary,
+                    briefing_report=briefing,
+                )
                 self._save()
                 return s
         return None
@@ -776,6 +791,59 @@ class Store:
     def add_ta_slot(self, slot: dict):
         self.schedules.append(slot)
         self._save()
+
+    def add_ta_slots(self, slots: list[dict]):
+        if not slots:
+            return
+        self.schedules.extend(slots)
+        self._save()
+
+    def clear_unbooked_ta_slots(self, ta_id: str, start_date: str, end_date: str) -> int:
+        kept: list[dict] = []
+        removed = 0
+        for slot in self.schedules:
+            if (
+                slot.get("ta_id") == ta_id
+                and start_date <= slot.get("date", "") <= end_date
+                and not slot.get("booked_by")
+            ):
+                removed += 1
+                continue
+            kept.append(slot)
+        if removed:
+            self.schedules = kept
+            self._save()
+        return removed
+
+    def get_ta_bookings_for_mentor(self, mentor_id: str) -> list[dict]:
+        items: list[dict] = []
+        for slot in self.schedules:
+            student_id = slot.get("booked_by")
+            if not student_id:
+                continue
+            student = self.get_user(student_id)
+            if not student or student.get("mentor_id") != mentor_id:
+                continue
+            items.append(
+                {
+                    "slot_id": slot.get("id", ""),
+                    "ta_id": slot.get("ta_id", ""),
+                    "ta_name": slot.get("ta_name", ""),
+                    "student_id": student_id,
+                    "student_name": slot.get("booked_by_name") or student.get("name", student_id),
+                    "booking_phone": slot.get("booking_phone") or "",
+                    "booking_description": slot.get("booking_description") or "",
+                    "booking_summary": slot.get("booking_summary") or "",
+                    "date": slot.get("date", ""),
+                    "start_time": slot.get("start_time", ""),
+                    "end_time": slot.get("end_time", ""),
+                }
+            )
+        return sorted(
+            items,
+            key=lambda item: f"{item.get('date', '')} {item.get('start_time', '')}",
+            reverse=True,
+        )
 
     # ━━━━━━━━━━━━━━━━━━ Student events ━━━━━━━━━━━━━━━━━━━
     def add_event(self, user_id: str, event: dict):

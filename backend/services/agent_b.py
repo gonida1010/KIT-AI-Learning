@@ -4,6 +4,7 @@ Agent B — 조교 스케줄러 & 통역기.
 """
 
 import logging
+import re
 from datetime import datetime
 
 from services.llm_provider import LLMProvider
@@ -58,6 +59,34 @@ BRIEFING_PROMPT = """\
 }}
 """
 
+BOOKING_NORMALIZE_PROMPT = """\
+당신은 조교 보충수업 접수 비서입니다.
+학생이 보낸 이름, 연락처, 요청 내용을 조교 대시보드에 표시하기 좋게 짧고 명확하게 정리하세요.
+
+반드시 아래 JSON 형식으로만 답변하세요:
+{
+  "student_name": "학생 이름",
+  "student_phone": "010-1234-5678",
+  "cleaned_request": "조교가 바로 이해할 수 있는 정리된 요청",
+  "short_summary": "대시보드용 한 줄 요약"
+}
+
+규칙:
+- 이름과 연락처는 입력값을 기반으로만 정리하고, 없는 값은 비워두세요.
+- 연락처는 가능한 경우 010-1234-5678 형식으로 맞추세요.
+- 요청 내용은 학생 말투를 유지하되 조교가 보기 좋게 1~2문장으로 정리하세요.
+- short_summary 는 40자 이내의 짧은 요약으로 만드세요.
+"""
+
+
+def _format_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) == 11:
+        return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+    if len(digits) == 10:
+        return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return (phone or "").strip()
+
 
 def _slots_text() -> str:
     slots = store.get_available_slots()
@@ -111,3 +140,38 @@ async def generate_briefing_report(
             "core_need": raw_input,
             "ai_recommendation": "AI 분석 실패. 수강생 원본 요청을 참고해 주세요.",
         }
+
+
+async def normalize_booking_request(
+    student_name: str,
+    student_phone: str,
+    raw_input: str,
+    llm: LLMProvider | None,
+) -> dict:
+    payload = (
+        f"이름: {student_name.strip()}\n"
+        f"연락처: {student_phone.strip()}\n"
+        f"요청 내용: {raw_input.strip()}"
+    )
+
+    if llm:
+        try:
+            result = await llm.chat_json(BOOKING_NORMALIZE_PROMPT, payload)
+            cleaned_request = (result.get("cleaned_request") or raw_input).strip()
+            short_summary = (result.get("short_summary") or cleaned_request).strip()
+            return {
+                "student_name": (result.get("student_name") or student_name).strip(),
+                "student_phone": _format_phone(result.get("student_phone") or student_phone),
+                "cleaned_request": cleaned_request,
+                "short_summary": short_summary[:40],
+            }
+        except Exception:
+            logger.exception("예약 접수 정리 실패")
+
+    cleaned_request = (raw_input or "").strip()
+    return {
+        "student_name": student_name.strip(),
+        "student_phone": _format_phone(student_phone),
+        "cleaned_request": cleaned_request,
+        "short_summary": cleaned_request[:40],
+    }

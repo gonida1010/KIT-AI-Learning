@@ -60,7 +60,9 @@ class TASlot(BaseModel):
     is_available: bool = True
     booked_by: str | None = None
     booked_by_name: str | None = None
+    booking_phone: str | None = None
     booking_description: str | None = None
+    booking_summary: str | None = None
     briefing_report: dict | None = None
 
 
@@ -68,6 +70,7 @@ class BookingRequest(BaseModel):
     slot_id: str
     student_id: str = "student_001"
     student_name: str = "김민수"
+    student_phone: str = ""
     description: str
 
 
