@@ -198,13 +198,7 @@
       "date": "2026-03-09",
       "weekday": 0,
       "source_filename": "20260309_채용정보.pdf",
-      "tags": [
-        "삼성SDS",
-        "카카오",
-        "네이버",
-        "쿠팡",
-        "공채"
-      ],
+      "tags": ["삼성SDS", "카카오", "네이버", "쿠팡", "공채"],
       "created_at": "2026-03-09T09:00:00"
     },
     {
@@ -216,12 +210,7 @@
       "date": "2026-03-10",
       "weekday": 1,
       "source_filename": "20260310_IT뉴스.pdf",
-      "tags": [
-        "Apple",
-        "VisionPro",
-        "XR",
-        "교육"
-      ],
+      "tags": ["Apple", "VisionPro", "XR", "교육"],
       "created_at": "2026-03-10T09:00:00"
     },
     {
@@ -233,12 +222,7 @@
       "date": "2026-03-11",
       "weekday": 2,
       "source_filename": "20260311_AI타임스.pdf",
-      "tags": [
-        "OpenAI",
-        "o3",
-        "코딩",
-        "에이전트"
-      ],
+      "tags": ["OpenAI", "o3", "코딩", "에이전트"],
       "created_at": "2026-03-11T09:00:00"
     },
     {
@@ -250,11 +234,7 @@
       "date": "2026-03-12",
       "weekday": 3,
       "source_filename": "20260312_자격증_공모전.pdf",
-      "tags": [
-        "정보처리기사",
-        "자격증",
-        "시험"
-      ],
+      "tags": ["정보처리기사", "자격증", "시험"],
       "created_at": "2026-03-12T09:00:00"
     },
     {
@@ -266,11 +246,7 @@
       "date": "2026-03-13",
       "weekday": 4,
       "source_filename": "20260313_개발트렌드.pdf",
-      "tags": [
-        "Rust",
-        "Linux",
-        "시스템프로그래밍"
-      ],
+      "tags": ["Rust", "Linux", "시스템프로그래밍"],
       "created_at": "2026-03-13T09:00:00"
     },
     {
@@ -282,12 +258,7 @@
       "date": "2026-03-16",
       "weekday": 0,
       "source_filename": "20260316_채용정보.pdf",
-      "tags": [
-        "LG CNS",
-        "토스",
-        "배달의민족",
-        "NHN"
-      ],
+      "tags": ["LG CNS", "토스", "배달의민족", "NHN"],
       "created_at": "2026-03-16T09:00:00"
     },
     {
@@ -299,12 +270,7 @@
       "date": "2026-03-17",
       "weekday": 1,
       "source_filename": "20260317_IT뉴스.pdf",
-      "tags": [
-        "클라우드",
-        "AWS",
-        "GCP",
-        "Azure"
-      ],
+      "tags": ["클라우드", "AWS", "GCP", "Azure"],
       "created_at": "2026-03-17T09:00:00"
     },
     {
@@ -316,12 +282,7 @@
       "date": "2026-03-18",
       "weekday": 2,
       "source_filename": "20260318_AI타임스.pdf",
-      "tags": [
-        "온디바이스",
-        "삼성",
-        "Apple",
-        "sLLM"
-      ],
+      "tags": ["온디바이스", "삼성", "Apple", "sLLM"],
       "created_at": "2026-03-18T09:00:00"
     },
     {
@@ -333,12 +294,7 @@
       "date": "2026-03-19",
       "weekday": 3,
       "source_filename": "20260319_자격증_공모전.pdf",
-      "tags": [
-        "공모전",
-        "오픈소스",
-        "AI",
-        "해커톤"
-      ],
+      "tags": ["공모전", "오픈소스", "AI", "해커톤"],
       "created_at": "2026-03-19T09:00:00"
     },
     {
@@ -350,12 +306,7 @@
       "date": "2026-03-20",
       "weekday": 4,
       "source_filename": "20260320_개발트렌드.pdf",
-      "tags": [
-        "Next.js",
-        "React",
-        "Turbopack",
-        "프론트엔드"
-      ],
+      "tags": ["Next.js", "React", "Turbopack", "프론트엔드"],
       "created_at": "2026-03-20T09:00:00"
     },
     {
@@ -367,12 +318,7 @@
       "date": "2026-03-23",
       "weekday": 0,
       "source_filename": "20260323_채용정보.pdf",
-      "tags": [
-        "당근",
-        "리디",
-        "뱅크샐러드",
-        "직방"
-      ],
+      "tags": ["당근", "리디", "뱅크샐러드", "직방"],
       "created_at": "2026-03-23T09:00:00"
     },
     {
@@ -384,12 +330,7 @@
       "date": "2026-03-24",
       "weekday": 1,
       "source_filename": "20260324_IT뉴스.pdf",
-      "tags": [
-        "EU",
-        "AI법",
-        "윤리",
-        "규제"
-      ],
+      "tags": ["EU", "AI법", "윤리", "규제"],
       "created_at": "2026-03-24T09:00:00"
     },
     {
@@ -401,12 +342,7 @@
       "date": "2026-03-25",
       "weekday": 2,
       "source_filename": "20260325_AI타임스.pdf",
-      "tags": [
-        "Gemini",
-        "GPT-5",
-        "에이전트",
-        "코딩도구"
-      ],
+      "tags": ["Gemini", "GPT-5", "에이전트", "코딩도구"],
       "created_at": "2026-03-25T09:00:00"
     },
     {
@@ -418,11 +354,7 @@
       "date": "2026-03-26",
       "weekday": 3,
       "source_filename": "20260326_자격증_공모전.pdf",
-      "tags": [
-        "SQLD",
-        "SQL",
-        "자격증"
-      ],
+      "tags": ["SQLD", "SQL", "자격증"],
       "created_at": "2026-03-26T09:00:00"
     },
     {
@@ -434,12 +366,7 @@
       "date": "2026-03-27",
       "weekday": 4,
       "source_filename": "20260327_개발트렌드.pdf",
-      "tags": [
-        "WebAssembly",
-        "WebGPU",
-        "AI",
-        "브라우저"
-      ],
+      "tags": ["WebAssembly", "WebGPU", "AI", "브라우저"],
       "created_at": "2026-03-27T09:00:00"
     },
     {
@@ -451,12 +378,7 @@
       "date": "2026-03-30",
       "weekday": 0,
       "source_filename": "20260330_채용정보.pdf",
-      "tags": [
-        "SKT",
-        "현대오토에버",
-        "카카오뱅크",
-        "라인"
-      ],
+      "tags": ["SKT", "현대오토에버", "카카오뱅크", "라인"],
       "created_at": "2026-03-30T09:00:00"
     },
     {
@@ -468,12 +390,7 @@
       "date": "2026-03-31",
       "weekday": 1,
       "source_filename": "20260331_IT뉴스.pdf",
-      "tags": [
-        "6G",
-        "삼성",
-        "LG",
-        "통신"
-      ],
+      "tags": ["6G", "삼성", "LG", "통신"],
       "created_at": "2026-03-31T09:00:00"
     },
     {
@@ -485,12 +402,7 @@
       "date": "2026-04-01",
       "weekday": 2,
       "source_filename": "20260401_AI타임스.pdf",
-      "tags": [
-        "Copilot",
-        "Cursor",
-        "AI코딩",
-        "도구비교"
-      ],
+      "tags": ["Copilot", "Cursor", "AI코딩", "도구비교"],
       "created_at": "2026-04-01T09:00:00"
     },
     {
@@ -502,11 +414,7 @@
       "date": "2026-04-02",
       "weekday": 3,
       "source_filename": "20260402_자격증_공모전.pdf",
-      "tags": [
-        "네이버",
-        "해커톤",
-        "D2SF"
-      ],
+      "tags": ["네이버", "해커톤", "D2SF"],
       "created_at": "2026-04-02T09:00:00"
     },
     {
@@ -518,11 +426,7 @@
       "date": "2026-04-03",
       "weekday": 4,
       "source_filename": "20260403_개발트렌드.pdf",
-      "tags": [
-        "TypeScript",
-        "Biome",
-        "프론트엔드"
-      ],
+      "tags": ["TypeScript", "Biome", "프론트엔드"],
       "created_at": "2026-04-03T09:00:00"
     },
     {
@@ -534,12 +438,7 @@
       "date": "2026-04-06",
       "weekday": 0,
       "source_filename": "20260406_채용정보.pdf",
-      "tags": [
-        "네이버웹툰",
-        "크래프톤",
-        "토스",
-        "특강"
-      ],
+      "tags": ["네이버웹툰", "크래프톤", "토스", "특강"],
       "created_at": "2026-04-06T09:00:00"
     },
     {
@@ -551,12 +450,7 @@
       "date": "2026-04-07",
       "weekday": 1,
       "source_filename": "20260407_IT뉴스.pdf",
-      "tags": [
-        "디지털정부",
-        "공공API",
-        "마이데이터",
-        "K8s"
-      ],
+      "tags": ["디지털정부", "공공API", "마이데이터", "K8s"],
       "created_at": "2026-04-07T09:00:00"
     },
     {
@@ -568,12 +462,7 @@
       "date": "2026-04-08",
       "weekday": 2,
       "source_filename": "20260408_AI타임스.pdf",
-      "tags": [
-        "Claude",
-        "Anthropic",
-        "에이전트",
-        "LLM비교"
-      ],
+      "tags": ["Claude", "Anthropic", "에이전트", "LLM비교"],
       "created_at": "2026-04-08T09:00:00"
     }
   ],

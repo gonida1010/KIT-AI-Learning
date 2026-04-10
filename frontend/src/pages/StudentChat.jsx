@@ -162,7 +162,10 @@ function WelcomeActions({ onAction, disabled }) {
           disabled={disabled}
           className={`flex flex-col items-start px-3 py-2.5 border rounded-xl text-left transition-colors disabled:opacity-40 ${a.color}`}
         >
-          <span className="flex items-center gap-1.5 text-sm font-medium">{a.icon}{a.label}</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            {a.icon}
+            {a.label}
+          </span>
           <span className="text-[11px] opacity-70 mt-0.5">{a.desc}</span>
         </button>
       ))}
@@ -245,7 +248,8 @@ export default function StudentChat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [handoffSending, setHandoffSending] = useState(false);
-  const [bookingPhase, setBookingPhase] = useState(null); // null | "dates" | "slots"
+  const [bookingPhase, setBookingPhase] = useState(null); // null | "dates" | "slots" | "description"
+  const [pendingSlot, setPendingSlot] = useState(null); // { slotId, label }
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -388,6 +392,13 @@ export default function StudentChat() {
     const msg = text || input.trim();
     if (!msg || sending) return;
     setInput("");
+
+    // 예약 설명 입력 대기 중 → 바로 예약 확정
+    if (bookingPhase === "description" && pendingSlot) {
+      finalizeBooking(msg);
+      return;
+    }
+
     setMessages((prev) => [...prev, { role: "user", content: msg }]);
     setSending(true);
 
@@ -570,21 +581,38 @@ export default function StudentChat() {
 
   const confirmBookingSlot = async (slotId, label) => {
     if (sending) return;
+    // 시간대 선택 → 필요 내용 입력 요청 (아직 예약 확정 안 함)
+    setPendingSlot({ slotId, label });
+    setBookingPhase("description");
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: label },
+      {
+        role: "assistant",
+        content: "어떤 내용을 보충받고 싶으신지 간단히 적어 주세요.\n(예: 파이썬 클래스에서 self가 뭔지 모르겠어요)",
+        agent_type: "agent_b",
+      },
+    ]);
+  };
+
+  const finalizeBooking = async (description) => {
+    if (sending || !pendingSlot) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: label }]);
+    setMessages((prev) => [...prev, { role: "user", content: description }]);
     try {
       const token = localStorage.getItem("edu_sync_token");
       const res = await fetch("/api/chat/booking/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          slot_id: slotId,
+          slot_id: pendingSlot.slotId,
           token,
-          description: "웹 채팅에서 보충수업 예약",
+          description,
         }),
       });
       const data = await res.json();
       setBookingPhase(null);
+      setPendingSlot(null);
       setMessages((prev) => [
         ...prev,
         {

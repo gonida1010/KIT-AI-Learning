@@ -114,7 +114,12 @@ async def mentor_dashboard(token: str = ""):
 
 @router.get("/students/by-mentor/{mentor_id}")
 async def list_students_by_mentor(mentor_id: str):
-    return store.get_students_by_mentor(mentor_id)
+    students = store.get_students_by_mentor(mentor_id)
+    pending = store.get_pending_handoffs()
+    pending_ids = {h["student_id"] for h in pending}
+    for s in students:
+        s["has_handoff"] = s["id"] in pending_ids
+    return students
 
 
 @router.get("/student/{student_id}/timeline")

@@ -673,9 +673,11 @@ export default function TADashboard() {
                 ? "border-primary-500 bg-primary-50"
                 : fullHoliday
                   ? "border-amber-300 bg-amber-50 text-amber-900"
-                  : isToday
-                    ? "border-slate-800 bg-slate-100"
-                    : "border-slate-200 bg-white hover:border-slate-300";
+                  : bookedCount > 0
+                    ? "border-primary-300 bg-primary-100"
+                    : isToday
+                      ? "border-slate-800 bg-slate-100"
+                      : "border-slate-200 bg-white hover:border-slate-300";
 
               return (
                 <div key={dateKey} className="group relative">

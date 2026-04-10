@@ -11,18 +11,26 @@ import {
 } from "lucide-react";
 
 function StudentRow({ student, selected, onClick }) {
+  const hasHandoff = student.has_handoff;
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${selected ? "bg-primary-50 border border-primary-200" : "bg-white hover:bg-slate-50 border border-slate-200"}`}
+      className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${selected ? "bg-primary-50 border border-primary-200" : hasHandoff ? "bg-amber-50 border border-amber-200 hover:bg-amber-100" : "bg-white hover:bg-slate-50 border border-slate-200"}`}
     >
-      <div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center text-sm font-bold text-primary-700">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${hasHandoff ? "bg-amber-200 text-amber-800" : "bg-primary-100 text-primary-700"}`}>
         {student.name?.[0] || "?"}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-800 truncate">
-          {student.name}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-slate-800 truncate">
+            {student.name}
+          </p>
+          {hasHandoff && (
+            <span className="shrink-0 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              1:1 요청
+            </span>
+          )}
+        </div>
         <p className="text-xs text-slate-400">
           {student.career_pref || "희망 직무 미설정"}
         </p>
