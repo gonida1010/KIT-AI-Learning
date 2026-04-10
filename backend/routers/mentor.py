@@ -122,6 +122,12 @@ async def list_students_by_mentor(mentor_id: str):
     return students
 
 
+@router.post("/handoff/dismiss/{student_id}")
+async def dismiss_handoff(student_id: str):
+    count = store.resolve_handoffs_by_student(student_id)
+    return {"resolved": count}
+
+
 @router.get("/student/{student_id}/timeline")
 async def student_timeline(student_id: str):
     student = store.get_user(student_id)

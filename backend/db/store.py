@@ -203,6 +203,18 @@ class Store:
                 return True
         return False
 
+    def resolve_handoffs_by_student(self, student_id: str) -> int:
+        with self._session() as db:
+            rows = (
+                db.query(Handoff)
+                .filter(Handoff.student_id == student_id, Handoff.status == "pending")
+                .all()
+            )
+            for r in rows:
+                r.status = "resolved"
+            db.commit()
+            return len(rows)
+
     # ━━━━━━━━━━━━━━━━━━━ TA Schedules ━━━━━━━━━━━━━━━━━━━
     def get_available_slots(self) -> list[dict]:
         today = datetime.now().strftime("%Y-%m-%d")

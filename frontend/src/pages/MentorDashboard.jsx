@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import {
+  Bell,
   BookOpen,
   Calendar,
   ExternalLink,
@@ -142,6 +143,7 @@ export default function MentorDashboard() {
   const { user } = useAuth();
   const [todayCurations, setTodayCurations] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [taBookings, setTaBookings] = useState([]);
   const [recentDocs, setRecentDocs] = useState([]);
   const [recentBasicDocs, setRecentBasicDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -158,6 +160,7 @@ export default function MentorDashboard() {
       const data = await dashboardRes.json();
       setTodayCurations(data.today_curations || []);
       setRecentActivity(data.recent_activity || []);
+      setTaBookings(data.ta_bookings || []);
       setRecentDocs(data.recent_docs || []);
       setRecentBasicDocs(data.recent_basic_docs || []);
     }
@@ -229,12 +232,39 @@ export default function MentorDashboard() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <BookOpen size={16} className="text-primary-500" />
-            최근 질문 기록
-          </div>
-          <div className="max-h-[720px] space-y-3 overflow-y-auto pr-1">
+        <section className="space-y-4">
+          {taBookings.length > 0 && (
+            <div className="rounded-2xl border border-primary-200 bg-primary-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary-700">
+                <Bell size={16} className="text-primary-500" />
+                예약 알림
+              </div>
+              <div className="space-y-2">
+                {taBookings.map((b) => (
+                  <div key={b.slot_id} className="rounded-xl border border-primary-200 bg-white p-3">
+                    <p className="text-sm font-medium text-slate-800">
+                      {b.student_name} → 조교 {b.ta_name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {b.date} {b.start_time} - {b.end_time}
+                    </p>
+                    {(b.booking_summary || b.booking_description) && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {b.booking_summary || b.booking_description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <BookOpen size={16} className="text-primary-500" />
+              최근 질문 기록
+            </div>
+            <div className="max-h-[720px] space-y-3 overflow-y-auto pr-1">
             {recentActivity.length ? (
               recentActivity.map((item, index) => (
                 <ActivityItem
@@ -247,6 +277,7 @@ export default function MentorDashboard() {
                 최근 24시간 질문 기록이 없습니다.
               </div>
             )}
+            </div>
           </div>
         </section>
 

@@ -17,7 +17,9 @@ function StudentRow({ student, selected, onClick }) {
       onClick={onClick}
       className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${selected ? "bg-primary-50 border border-primary-200" : hasHandoff ? "bg-amber-50 border border-amber-200 hover:bg-amber-100" : "bg-white hover:bg-slate-50 border border-slate-200"}`}
     >
-      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${hasHandoff ? "bg-amber-200 text-amber-800" : "bg-primary-100 text-primary-700"}`}>
+      <div
+        className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${hasHandoff ? "bg-amber-200 text-amber-800" : "bg-primary-100 text-primary-700"}`}
+      >
         {student.name?.[0] || "?"}
       </div>
       <div className="min-w-0 flex-1">
@@ -70,6 +72,14 @@ export default function MentorStudents() {
   const selectStudent = async (student) => {
     setSelectedStudent(student);
     setVisibleTimelineCount(5);
+
+    if (student.has_handoff) {
+      fetch(`/api/mentor/handoff/dismiss/${student.id}`, { method: "POST" }).catch(() => {});
+      setStudents((prev) =>
+        prev.map((s) => (s.id === student.id ? { ...s, has_handoff: false } : s)),
+      );
+    }
+
     try {
       const res = await fetch(`/api/mentor/student/${student.id}/timeline`);
       const data = await res.json();

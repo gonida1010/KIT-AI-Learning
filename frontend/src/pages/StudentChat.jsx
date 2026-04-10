@@ -589,7 +589,8 @@ export default function StudentChat() {
       { role: "user", content: label },
       {
         role: "assistant",
-        content: "어떤 내용을 보충받고 싶으신지 간단히 적어 주세요.\n(예: 파이썬 클래스에서 self가 뭔지 모르겠어요)",
+        content:
+          "어떤 내용을 보충받고 싶으신지 간단히 적어 주세요.\n(예: 파이썬 클래스에서 self가 뭔지 모르겠어요)",
         agent_type: "agent_b",
       },
     ]);
