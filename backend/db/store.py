@@ -14,6 +14,7 @@ from db.models import (
     Handoff,
     InviteCode,
     KnowledgeDoc,
+    MentorBasicDoc,
     MentorDoc,
     QRSession,
     Schedule,
@@ -423,6 +424,44 @@ class Store:
             row = (
                 db.query(MentorDoc)
                 .filter(MentorDoc.id == mentor_doc_id, MentorDoc.mentor_id == mentor_id)
+                .first()
+            )
+            if row:
+                data = _row_to_dict(row)
+                db.delete(row)
+                db.commit()
+                return data
+        return None
+
+    # ━━━━━━━━━━━━━━━━━━ Mentor basic docs ━━━━━━━━━━━━━━━
+    def add_mentor_basic_doc(self, doc: dict):
+        with self._session() as db:
+            db.add(MentorBasicDoc(**{k: v for k, v in doc.items() if hasattr(MentorBasicDoc, k)}))
+            db.commit()
+
+    def get_mentor_basic_docs(self, mentor_id: str, query: str | None = None) -> list[dict]:
+        with self._session() as db:
+            q = db.query(MentorBasicDoc).filter(MentorBasicDoc.mentor_id == mentor_id)
+            if query:
+                like = f"%{query.lower()}%"
+                q = q.filter(
+                    MentorBasicDoc.digest_title.ilike(like)
+                    | MentorBasicDoc.digest_summary.ilike(like)
+                    | MentorBasicDoc.filename.ilike(like)
+                )
+            rows = q.order_by(MentorBasicDoc.uploaded_at.desc()).all()
+            return [_row_to_dict(r) for r in rows]
+
+    def get_mentor_basic_doc(self, doc_id: str) -> dict | None:
+        with self._session() as db:
+            row = db.get(MentorBasicDoc, doc_id)
+            return _row_to_dict(row) if row else None
+
+    def remove_mentor_basic_doc(self, mentor_id: str, doc_id: str) -> dict | None:
+        with self._session() as db:
+            row = (
+                db.query(MentorBasicDoc)
+                .filter(MentorBasicDoc.id == doc_id, MentorBasicDoc.mentor_id == mentor_id)
                 .first()
             )
             if row:

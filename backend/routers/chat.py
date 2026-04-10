@@ -147,11 +147,12 @@ async def chat_history(student_id: str):
 class TipsRequest(BaseModel):
     student_id: str | None = None
     token: str | None = None
+    type: str = "latest"   # "latest" | "basic"
 
 
 @router.post("/tips")
 async def learning_tips(req: TipsRequest):
-    """학생의 담당 멘토가 올린 최신 자료 반환."""
+    """학생의 담당 멘토가 올린 자료 반환. type=latest: 최신 자료, type=basic: 기초 자료."""
     sid = req.student_id
     if not sid and req.token:
         sid = store.get_session(req.token)
@@ -166,13 +167,20 @@ async def learning_tips(req: TipsRequest):
     if mentor_id:
         mentor = store.get_user(mentor_id)
         mentor_name = mentor.get("name", "") if mentor else ""
-        raw_docs = store.get_mentor_docs(mentor_id)[:5]
+
+        if req.type == "basic":
+            raw_docs = store.get_mentor_basic_docs(mentor_id)[:5]
+            asset_prefix = "/api/mentor/basic/assets"
+        else:
+            raw_docs = store.get_mentor_docs(mentor_id)[:5]
+            asset_prefix = "/api/mentor/knowledge/assets"
+
         for d in raw_docs:
             source_kind = d.get("source_kind", "file")
             if source_kind == "link":
                 attachment_url = d.get("source_url", "")
             else:
-                attachment_url = f"/api/mentor/knowledge/assets/{d['id']}"
+                attachment_url = f"{asset_prefix}/{d['id']}"
             mentor_docs.append({
                 "id": d.get("id"),
                 "title": d.get("digest_title") or d.get("filename", ""),
@@ -185,6 +193,96 @@ async def learning_tips(req: TipsRequest):
     return {
         "mentor_name": mentor_name,
         "mentor_docs": mentor_docs,
+        "type": req.type,
+    }
+
+
+class BookingConfirmRequest(BaseModel):
+    slot_id: str
+    token: str | None = None
+    student_id: str | None = None
+    description: str = "웹 채팅에서 예약"
+
+
+@router.get("/booking/dates")
+async def booking_dates():
+    """예약 가능한 날짜 목록 반환 (향후 2주)."""
+    slots = store.get_available_slots()
+    date_map: dict[str, int] = {}
+    for s in slots:
+        d = s["date"]
+        date_map[d] = date_map.get(d, 0) + 1
+    dates = sorted(date_map.keys())
+    return [{"date": d, "count": date_map[d]} for d in dates]
+
+
+@router.get("/booking/slots")
+async def booking_slots(date: str):
+    """특정 날짜의 예약 가능 시간대 반환."""
+    slots = store.get_available_slots()
+    filtered = [s for s in slots if s["date"] == date]
+    filtered.sort(key=lambda s: s.get("start_time", ""))
+    return [
+        {
+            "id": s["id"],
+            "ta_name": s.get("ta_name", ""),
+            "start_time": s.get("start_time", ""),
+            "end_time": s.get("end_time", ""),
+        }
+        for s in filtered
+    ]
+
+
+@router.post("/booking/confirm")
+async def booking_confirm(req: BookingConfirmRequest):
+    """웹 채팅에서 슬롯 예약 확정."""
+    from main import llm_provider
+    from services.agent_b import generate_briefing_report, normalize_booking_request
+
+    sid = req.student_id
+    if not sid and req.token:
+        sid = store.get_session(req.token)
+    if not sid:
+        sid = "student_001"
+
+    student = store.get_user(sid) or {}
+    student_name = student.get("name", "웹 유저")
+
+    normalized = await normalize_booking_request(
+        student_name, "", req.description, llm_provider,
+    )
+    events = store.get_student_events(sid)
+    keywords = [e["content"] for e in events if e.get("event_type") == "search"]
+    briefing = await generate_briefing_report(
+        student_name=normalized["student_name"],
+        raw_input=normalized["cleaned_request"],
+        search_history=keywords,
+        llm=llm_provider,
+    )
+
+    slot = store.book_slot(
+        slot_id=req.slot_id,
+        student_id=sid,
+        student_name=normalized["student_name"],
+        desc=normalized["cleaned_request"],
+        briefing=briefing,
+        student_phone=normalized.get("student_phone", ""),
+        summary=normalized["short_summary"],
+    )
+    if not slot:
+        return {"status": "error", "message": "해당 시간대는 이미 예약되었습니다."}
+
+    store.add_event(sid, {
+        "timestamp": _now(), "event_type": "doc_access",
+        "content": f"조교 보충수업 예약 ({slot.get('ta_name', '')})",
+        "detail": normalized["short_summary"][:80],
+    })
+
+    return {
+        "status": "ok",
+        "message": f"✅ {slot.get('date', '')} {slot.get('start_time', '')}~{slot.get('end_time', '')} "
+                   f"({slot.get('ta_name', '')}) 예약이 완료되었습니다!",
+        "slot": slot,
     }
 
 

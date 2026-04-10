@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import {
   Send,
@@ -11,6 +11,8 @@ import {
   FileText,
   ExternalLink,
   Download,
+  Calendar,
+  Clock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -104,7 +106,7 @@ function ChoiceButtons({ choices, onSelect }) {
       {choices.map((c, i) => (
         <button
           key={i}
-          onClick={() => onSelect(c.label || c.description || c)}
+          onClick={() => onSelect(c.label || c.description || c, c)}
           className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-primary-50 text-slate-700 hover:text-primary-700 border border-slate-200 hover:border-primary-300 rounded-full transition-colors"
         >
           {c.label || c}
@@ -202,9 +204,20 @@ function ChatMessage({ msg, onSelect, onQuickAction, sending }) {
         {msg.mentor_docs?.map((doc, i) => (
           <MentorDocCard key={`md-${i}`} doc={doc} />
         ))}
-        {msg.related_materials?.map((doc, i) => (
-          <MentorDocCard key={`rm-${i}`} doc={doc} />
-        ))}
+        {(() => {
+          const shownIds = new Set(msg.mentor_docs?.map((d) => d.id) || []);
+          const unique = (msg.related_materials || []).filter(
+            (d) => !shownIds.has(d.id),
+          );
+          const seen = new Set();
+          return unique
+            .filter((d) => {
+              if (seen.has(d.id)) return false;
+              seen.add(d.id);
+              return true;
+            })
+            .map((doc, i) => <MentorDocCard key={`rm-${i}`} doc={doc} />);
+        })()}
         <ChoiceButtons choices={msg.choices} onSelect={onSelect} />
         {msg.isWelcome && (
           <WelcomeActions onAction={onQuickAction} disabled={sending} />
@@ -226,6 +239,7 @@ export default function StudentChat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [handoffSending, setHandoffSending] = useState(false);
+  const [bookingPhase, setBookingPhase] = useState(null); // null | "dates" | "slots"
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -294,24 +308,43 @@ export default function StudentChat() {
     }
   };
 
-  /* ── 퀵 액션: 학습 팁 ── */
+  /* ── 퀵 액션: 학습 팁 (선택지 표시) ── */
   const fetchLearningTips = async () => {
     if (sending) return;
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: "📚 학습 팁" },
+      {
+        role: "assistant",
+        content: "어떤 자료를 보고 싶으신가요?",
+        agent_type: "agent_a",
+        choices: [
+          { label: "📖 최신 자료", description: "멘토님이 최근 올린 자료", _action: "tips_type", _type: "latest" },
+          { label: "📘 기초 자료", description: "기본 학습 자료", _action: "tips_type", _type: "basic" },
+        ],
+      },
+    ]);
+  };
+
+  const fetchTipsByType = async (type) => {
+    if (sending) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: "📚 학습 팁" }]);
+    const label = type === "basic" ? "📘 기초 자료" : "📖 최신 자료";
+    setMessages((prev) => [...prev, { role: "user", content: label }]);
     try {
       const token = localStorage.getItem("edu_sync_token");
       const res = await fetch("/api/chat/tips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ student_id: user?.id, token }),
+        body: JSON.stringify({ student_id: user?.id, token, type }),
       });
       const data = await res.json();
       const docs = data.mentor_docs || [];
+      const typeLabel = type === "basic" ? "기초" : "최신";
       const text =
         data.mentor_name && docs.length > 0
-          ? `📖 ${data.mentor_name} 멘토님의 최신 자료 (${docs.length}건)`
-          : "📖 아직 멘토님이 올린 자료가 없습니다.";
+          ? `📖 ${data.mentor_name} 멘토님의 ${typeLabel} 자료 (${docs.length}건)`
+          : `📖 아직 멘토님이 올린 ${typeLabel} 자료가 없습니다.`;
       setMessages((prev) => [
         ...prev,
         {
@@ -412,10 +445,156 @@ export default function StudentChat() {
     }
   };
 
+  /* ── 조교 예약 플로우: 날짜 선택 → 시간 선택 → 확정 ── */
+  const startBookingFlow = async () => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [...prev, { role: "user", content: "📅 조교 연결" }]);
+    try {
+      const res = await fetch("/api/chat/booking/dates");
+      const dates = await res.json();
+      if (!dates.length) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              "현재 예약 가능한 시간이 없습니다.\n조교 선생님이 일정을 등록하면 안내해 드릴게요.",
+            agent_type: "agent_b",
+          },
+        ]);
+        return;
+      }
+      const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+      const choices = dates.map((d) => {
+        const dt = new Date(d.date + "T00:00:00");
+        const wd = WEEKDAY[dt.getDay()];
+        return {
+          label: `${d.date} (${wd})`,
+          description: `${d.count}개 시간대 가능`,
+          _action: "pick_date",
+          _date: d.date,
+        };
+      });
+      setBookingPhase("dates");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "📅 예약 가능한 날짜를 선택해 주세요.",
+          agent_type: "agent_b",
+          choices,
+          isBookingDates: true,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "예약 정보를 불러오지 못했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickBookingDate = async (date) => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [...prev, { role: "user", content: `📅 ${date}` }]);
+    try {
+      const res = await fetch(`/api/chat/booking/slots?date=${date}`);
+      const slots = await res.json();
+      if (!slots.length) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `${date}에는 가능한 시간대가 없습니다. 다른 날짜를 선택해 주세요.`,
+            agent_type: "agent_b",
+          },
+        ]);
+        setBookingPhase(null);
+        return;
+      }
+      const choices = slots.map((s) => ({
+        label: `${s.start_time}~${s.end_time} (${s.ta_name})`,
+        description: `${s.ta_name} 조교`,
+        _action: "pick_slot",
+        _slotId: s.id,
+        _date: date,
+      }));
+      setBookingPhase("slots");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `⏰ ${date} 예약 가능 시간을 선택해 주세요.`,
+          agent_type: "agent_b",
+          choices,
+          isBookingSlots: true,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "시간대 조회 중 오류가 발생했습니다.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const confirmBookingSlot = async (slotId, label) => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [...prev, { role: "user", content: `⏰ ${label}` }]);
+    try {
+      const token = localStorage.getItem("edu_sync_token");
+      const res = await fetch("/api/chat/booking/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slot_id: slotId,
+          token,
+          description: "웹 채팅에서 보충수업 예약",
+        }),
+      });
+      const data = await res.json();
+      setBookingPhase(null);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.message || "예약이 완료되었습니다!",
+          agent_type: "agent_b",
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "예약 처리 중 오류가 발생했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
   /* ── 웰컴 버튼 디스패처 ── */
   const handleQuickAction = (key) => {
     if (key === "curation") fetchTodayCuration();
-    else if (key === "ta") send("조교 보충수업 예약하고 싶어요");
+    else if (key === "ta") startBookingFlow();
     else if (key === "tips") fetchLearningTips();
     else if (key === "mentor") requestMentorHandoff();
   };
@@ -448,7 +627,17 @@ export default function StudentChat() {
             <ChatMessage
               key={i}
               msg={msg}
-              onSelect={(text) => send(text)}
+              onSelect={(text, choiceData) => {
+                if (choiceData?._action === "pick_date") {
+                  pickBookingDate(choiceData._date);
+                } else if (choiceData?._action === "pick_slot") {
+                  confirmBookingSlot(choiceData._slotId, text);
+                } else if (choiceData?._action === "tips_type") {
+                  fetchTipsByType(choiceData._type);
+                } else {
+                  send(text);
+                }
+              }}
               onQuickAction={handleQuickAction}
               sending={sending}
             />

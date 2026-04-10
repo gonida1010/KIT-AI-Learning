@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 
 from services.llm_provider import LLMProvider, extract_json
-from services.rag import search_curation_vectorstore, search_mentor_vectorstore
+from services.rag import search_curation_vectorstore, search_mentor_vectorstore, search_mentor_basic_vectorstore
 from db.store import store
 
 logger = logging.getLogger(__name__)
@@ -59,31 +59,55 @@ AGENT_A_PROMPT = """\
 """
 
 
-def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, list[dict]]:
+def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, list[dict], list[dict]]:
+    """멘토 최신 자료 + 기초 자료를 모두 검색. Returns (context_text, latest_docs, basic_docs)."""
     if not user_id:
-        return "(멘토 전용 자료 없음)", []
+        return "(멘토 전용 자료 없음)", [], []
 
     user = store.get_user(user_id)
     mentor_id = (user or {}).get("mentor_id")
     if not mentor_id:
-        return "(연결된 멘토 없음)", []
+        return "(연결된 멘토 없음)", [], []
 
+    # 최신 자료 검색
     results = search_mentor_vectorstore(mentor_id, message, k=3)
-    if not results:
-        return "(유사한 멘토 전용 자료 없음)", []
-
-    docs = []
+    latest_docs = []
+    seen_ids: set[str] = set()
     lines = []
     for result in results:
-        mentor_doc = store.get_mentor_doc(result.get("mentor_doc_id", ""))
+        doc_id = result.get("mentor_doc_id", "")
+        if doc_id in seen_ids:
+            continue
+        mentor_doc = store.get_mentor_doc(doc_id)
         if not mentor_doc:
             continue
-        docs.append(mentor_doc)
+        seen_ids.add(doc_id)
+        latest_docs.append(mentor_doc)
         lines.append(
-            f"[{mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}]\n"
+            f"[최신자료: {mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}]\n"
             f"요약: {mentor_doc.get('digest_summary', '')}"
         )
-    return "\n\n".join(lines) if lines else "(유사한 멘토 전용 자료 없음)", docs
+
+    # 기초 자료 검색
+    basic_results = search_mentor_basic_vectorstore(mentor_id, message, k=3)
+    basic_docs = []
+    basic_seen: set[str] = set()
+    for result in basic_results:
+        doc_id = result.get("mentor_basic_doc_id", "")
+        if doc_id in basic_seen:
+            continue
+        basic_doc = store.get_mentor_basic_doc(doc_id)
+        if not basic_doc:
+            continue
+        basic_seen.add(doc_id)
+        basic_docs.append(basic_doc)
+        lines.append(
+            f"[기초자료: {basic_doc.get('digest_title', basic_doc.get('filename', '자료'))}]\n"
+            f"요약: {basic_doc.get('digest_summary', '')}"
+        )
+
+    ctx = "\n\n".join(lines) if lines else "(유사한 멘토 전용 자료 없음)"
+    return ctx, latest_docs, basic_docs
 
 
 # ── LLM 기반 큐레이션 의도 분석 프롬프트 ───────────────────
@@ -197,7 +221,7 @@ async def handle_agent_a(
         rag_ctx = "\n\n".join(d.page_content for d in docs)
 
     curation_ctx, curation_matched = await _search_curations_semantic(message, llm)
-    mentor_material_ctx, mentor_materials = _search_mentor_materials(user_id, message)
+    mentor_material_ctx, mentor_materials, basic_materials = _search_mentor_materials(user_id, message)
 
     prompt = AGENT_A_PROMPT.format(
         context=rag_ctx
@@ -256,8 +280,27 @@ async def handle_agent_a(
                     else f"/api/mentor/knowledge/assets/{doc['id']}"
                 ),
                 "source_kind": doc.get("source_kind", "file"),
+                "doc_type": "latest",
             }
             for doc in mentor_materials[:3]
         ]
+
+    if basic_materials:
+        basics = [
+            {
+                "id": doc["id"],
+                "digest_title": doc.get("digest_title", doc.get("filename", "자료")),
+                "digest_summary": doc.get("digest_summary", ""),
+                "attachment_url": (
+                    doc.get("source_url")
+                    if doc.get("source_kind") == "link"
+                    else f"/api/mentor/basic/assets/{doc['id']}"
+                ),
+                "source_kind": doc.get("source_kind", "file"),
+                "doc_type": "basic",
+            }
+            for doc in basic_materials[:3]
+        ]
+        result.setdefault("related_materials", []).extend(basics)
 
     return result

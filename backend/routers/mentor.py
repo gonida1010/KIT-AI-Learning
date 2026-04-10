@@ -11,10 +11,11 @@ from langchain.schema import Document
 
 from db.store import store
 from models.schemas import StudentProfile, TimelineEvent
-from services.rag import DATA_DIR, add_mentor_document_to_vectorstore
+from services.rag import DATA_DIR, add_mentor_document_to_vectorstore, add_mentor_basic_document_to_vectorstore
 
 router = APIRouter(prefix="/api/mentor", tags=["mentor"])
 MENTOR_ASSET_DIR = DATA_DIR / "mentor_assets"
+MENTOR_BASIC_ASSET_DIR = DATA_DIR / "mentor_basic_assets"
 
 
 def _require_mentor(token: str) -> dict:
@@ -82,18 +83,30 @@ def _serialize_mentor_doc(doc: dict) -> dict:
     return data
 
 
+def _serialize_basic_doc(doc: dict) -> dict:
+    data = dict(doc)
+    if data.get("source_kind") == "link":
+        data["attachment_url"] = data.get("source_url")
+    else:
+        data["attachment_url"] = f"/api/mentor/basic/assets/{data['id']}"
+    data["is_stale"] = _doc_is_stale(data.get("uploaded_at", ""))
+    return data
+
+
 @router.get("/dashboard")
 async def mentor_dashboard(token: str = ""):
     mentor = _require_mentor(token)
     today = datetime.now().strftime("%Y-%m-%d")
     today_curations = store.get_curations(date=today)[:3]
     recent_docs = store.get_mentor_docs(mentor["id"])[:5]
+    recent_basic_docs = store.get_mentor_basic_docs(mentor["id"])[:5]
     activity = store.get_recent_chat_activity(mentor["id"], hours=24)[:20]
     ta_bookings = store.get_ta_bookings_for_mentor(mentor["id"])[:8]
 
     return {
         "today_curations": today_curations,
         "recent_docs": [_serialize_mentor_doc(doc) for doc in recent_docs],
+        "recent_basic_docs": [_serialize_basic_doc(doc) for doc in recent_basic_docs],
         "recent_activity": activity,
         "ta_bookings": ta_bookings,
     }
@@ -238,6 +251,132 @@ async def open_mentor_asset(doc_id: str):
         raise HTTPException(404, "첨부 없음")
 
     asset_path = MENTOR_ASSET_DIR / doc["mentor_id"] / file_name
+    if not asset_path.exists():
+        raise HTTPException(404, "파일 없음")
+
+    media_type, _ = mimetypes.guess_type(asset_path.name)
+    return FileResponse(asset_path, media_type=media_type or "application/octet-stream")
+
+
+# ── 기초 자료 API ────────────────────────────────────────
+@router.get("/basic")
+async def list_mentor_basic(token: str = "", q: str = "", scope: str = "all", limit: int = 50):
+    mentor = _require_mentor(token)
+    docs = store.get_mentor_basic_docs(mentor["id"], query=q)
+    if scope == "latest":
+        docs = [doc for doc in docs if not _doc_is_stale(doc.get("uploaded_at", ""))]
+    elif scope == "stale":
+        docs = [doc for doc in docs if _doc_is_stale(doc.get("uploaded_at", ""))]
+    return [_serialize_basic_doc(doc) for doc in docs[:limit]]
+
+
+@router.post("/basic/upload")
+async def upload_mentor_basic(
+    token: str = Form(""),
+    file: UploadFile | None = File(default=None),
+    source_link: str = Form(""),
+):
+    mentor = _require_mentor(token)
+    if file is None and not source_link.strip():
+        raise HTTPException(400, "파일 또는 링크가 필요합니다.")
+
+    basic_dir = MENTOR_BASIC_ASSET_DIR / mentor["id"]
+    basic_dir.mkdir(parents=True, exist_ok=True)
+
+    source_kind = "link" if source_link.strip() and file is None else "file"
+    content_text = ""
+    stored_name = ""
+
+    if file is not None:
+        if not file.filename:
+            raise HTTPException(400, "파일명 없음")
+        stored_name = f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
+        stored_path = basic_dir / stored_name
+        payload = await file.read()
+        stored_path.write_bytes(payload)
+        suffix = stored_path.suffix.lower()
+        if suffix == ".pdf":
+            from pypdf import PdfReader
+
+            reader = PdfReader(str(stored_path))
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    content_text += text + "\n"
+        else:
+            content_text = f"첨부 파일명: {Path(file.filename).stem}"
+            if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+                source_kind = "image"
+    else:
+        content_text = f"외부 링크 자료: {source_link.strip()}"
+
+    digest_title, digest_summary = await _build_ai_digest(content_text, stored_name or source_link)
+    doc_id = uuid.uuid4().hex[:12]
+    basic_doc = {
+        "id": doc_id,
+        "mentor_id": mentor["id"],
+        "filename": stored_name or source_link.strip(),
+        "source_filename": stored_name or None,
+        "source_url": source_link.strip() or None,
+        "source_kind": source_kind,
+        "digest_title": digest_title,
+        "digest_summary": digest_summary,
+        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
+    }
+    store.add_mentor_basic_doc(basic_doc)
+
+    vector_text = (
+        f"제목: {digest_title}\n"
+        f"요약: {digest_summary}\n"
+        f"원문: {content_text or digest_title}"
+    )
+    add_mentor_basic_document_to_vectorstore(
+        mentor["id"],
+        [
+            Document(
+                page_content=vector_text,
+                metadata={
+                    "mentor_basic_doc_id": doc_id,
+                    "digest_title": digest_title,
+                    "filename": basic_doc["filename"],
+                },
+            )
+        ],
+    )
+
+    return {"status": "ok", "document": _serialize_basic_doc(basic_doc)}
+
+
+@router.delete("/basic/{doc_id}")
+async def delete_mentor_basic(doc_id: str, token: str = ""):
+    mentor = _require_mentor(token)
+    removed = store.remove_mentor_basic_doc(mentor["id"], doc_id)
+    if not removed:
+        raise HTTPException(404, "문서 없음")
+
+    source_filename = removed.get("source_filename")
+    if source_filename:
+        asset_path = MENTOR_BASIC_ASSET_DIR / mentor["id"] / source_filename
+        if asset_path.exists():
+            asset_path.unlink()
+    return {"status": "ok"}
+
+
+@router.get("/basic/assets/{doc_id}")
+async def open_basic_asset(doc_id: str):
+    doc = store.get_mentor_basic_doc(doc_id)
+    if not doc:
+        raise HTTPException(404, "문서 없음")
+
+    if doc.get("source_kind") == "link" and doc.get("source_url"):
+        return RedirectResponse(doc["source_url"])
+
+    file_name = doc.get("source_filename")
+    if not file_name:
+        raise HTTPException(404, "첨부 없음")
+
+    asset_path = MENTOR_BASIC_ASSET_DIR / doc["mentor_id"] / file_name
     if not asset_path.exists():
         raise HTTPException(404, "파일 없음")
 

@@ -273,3 +273,75 @@ def search_mentor_vectorstore(mentor_id: str, query: str, k: int = 3) -> list[di
             **doc.metadata,
         })
     return items
+
+
+# ━━━━━━━━━━━━━━━━━━ 기초 자료 벡터스토어 ━━━━━━━━━━━━━━━━━━
+MENTOR_BASIC_VS_DIR = BASE_DIR / "vectorstore_mentor_basic"
+_mentor_basic_vs_map: dict[str, object] = {}
+
+
+def _mentor_basic_vectorstore_dir(mentor_id: str) -> Path:
+    return MENTOR_BASIC_VS_DIR / mentor_id
+
+
+def get_mentor_basic_vectorstore(mentor_id: str):
+    from langchain_community.vectorstores import FAISS
+
+    if mentor_id in _mentor_basic_vs_map:
+        return _mentor_basic_vs_map[mentor_id]
+
+    bdir = _mentor_basic_vectorstore_dir(mentor_id)
+    if (bdir / "index.faiss").exists():
+        embeddings = _get_embeddings()
+        _mentor_basic_vs_map[mentor_id] = FAISS.load_local(
+            str(bdir), embeddings, allow_dangerous_deserialization=True
+        )
+        return _mentor_basic_vs_map[mentor_id]
+    return None
+
+
+def build_mentor_basic_vectorstore(mentor_id: str, documents: list[Document]):
+    from langchain_community.vectorstores import FAISS
+
+    bdir = _mentor_basic_vectorstore_dir(mentor_id)
+    bdir.mkdir(parents=True, exist_ok=True)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=600, chunk_overlap=100, separators=["\n\n", "\n", ".", " "]
+    )
+    chunks = splitter.split_documents(documents)
+    embeddings = _get_embeddings()
+    vs = FAISS.from_documents(chunks, embeddings)
+    vs.save_local(str(bdir))
+    _mentor_basic_vs_map[mentor_id] = vs
+    return vs
+
+
+def add_mentor_basic_document_to_vectorstore(mentor_id: str, documents: list[Document]):
+    vs = get_mentor_basic_vectorstore(mentor_id)
+    if vs is None:
+        return build_mentor_basic_vectorstore(mentor_id, documents)
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=600, chunk_overlap=100, separators=["\n\n", "\n", ".", " "]
+    )
+    chunks = splitter.split_documents(documents)
+    vs.add_documents(chunks)
+    vs.save_local(str(_mentor_basic_vectorstore_dir(mentor_id)))
+    _mentor_basic_vs_map[mentor_id] = vs
+    return vs
+
+
+def search_mentor_basic_vectorstore(mentor_id: str, query: str, k: int = 3) -> list[dict]:
+    vs = get_mentor_basic_vectorstore(mentor_id)
+    if vs is None:
+        return []
+
+    results = vs.similarity_search_with_score(query, k=k)
+    items = []
+    for doc, score in results:
+        items.append({
+            "content": doc.page_content,
+            "score": float(score),
+            **doc.metadata,
+        })
+    return items

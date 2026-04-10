@@ -119,6 +119,22 @@ class MentorDoc(Base):
     chunk_count = Column(Integer, default=0)
 
 
+class MentorBasicDoc(Base):
+    """기초 자료 — 멘토가 올리는 기본 학습 자료 (최신 자료와 분리)."""
+    __tablename__ = "mentor_basic_docs"
+
+    id = Column(String, primary_key=True)
+    mentor_id = Column(String, nullable=False, index=True)
+    filename = Column(String, nullable=True)
+    source_filename = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
+    source_kind = Column(String, nullable=True)  # file, link, image
+    digest_title = Column(String, nullable=True)
+    digest_summary = Column(Text, nullable=True)
+    uploaded_at = Column(String, nullable=True)
+    chunk_count = Column(Integer, default=0)
+
+
 class CurationItem(Base):
     __tablename__ = "curation_items"
 

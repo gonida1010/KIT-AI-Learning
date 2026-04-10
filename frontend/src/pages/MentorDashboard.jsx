@@ -143,7 +143,9 @@ export default function MentorDashboard() {
   const [todayCurations, setTodayCurations] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [recentDocs, setRecentDocs] = useState([]);
+  const [recentBasicDocs, setRecentBasicDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [basicUploading, setBasicUploading] = useState(false);
   const [error, setError] = useState("");
   const token = localStorage.getItem("edu_sync_token");
 
@@ -157,6 +159,7 @@ export default function MentorDashboard() {
       setTodayCurations(data.today_curations || []);
       setRecentActivity(data.recent_activity || []);
       setRecentDocs(data.recent_docs || []);
+      setRecentBasicDocs(data.recent_basic_docs || []);
     }
   }, [token]);
 
@@ -186,6 +189,31 @@ export default function MentorDashboard() {
       setError(uploadError.message || "업로드에 실패했습니다.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const uploadBasicFile = async (file) => {
+    if (!file) return;
+    setBasicUploading(true);
+    setError("");
+    const formData = new FormData();
+    formData.append("token", token || "");
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/mentor/basic/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "업로드에 실패했습니다.");
+      }
+      await fetchData();
+    } catch (uploadError) {
+      setError(uploadError.message || "업로드에 실패했습니다.");
+    } finally {
+      setBasicUploading(false);
     }
   };
 
@@ -223,7 +251,22 @@ export default function MentorDashboard() {
         </section>
 
         <section className="space-y-4">
-          <UploadDropZone onFileSelect={uploadFile} uploading={uploading} />
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Upload size={16} className="text-primary-500" />
+              📖 최신 자료 첨부
+            </div>
+            <UploadDropZone onFileSelect={uploadFile} uploading={uploading} />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700">
+              <Upload size={16} className="text-blue-500" />
+              📘 기초 자료 첨부
+            </div>
+            <UploadDropZone onFileSelect={uploadBasicFile} uploading={basicUploading} />
+          </div>
+
           {error && <p className="text-sm text-red-500">{error}</p>}
 
           <div>
@@ -246,8 +289,8 @@ export default function MentorDashboard() {
 
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <BookOpen size={16} className="text-primary-500" />내 최신 자료
-              5개
+              <BookOpen size={16} className="text-primary-500" />
+              내 최신 자료 5개
             </div>
             <div className="space-y-3">
               {recentDocs.length ? (
@@ -256,7 +299,25 @@ export default function MentorDashboard() {
                 ))
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-400">
-                  아직 업로드한 멘토 자료가 없습니다.
+                  아직 업로드한 최신 자료가 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-700">
+              <BookOpen size={16} className="text-blue-500" />
+              내 기초 자료 5개
+            </div>
+            <div className="space-y-3">
+              {recentBasicDocs.length ? (
+                recentBasicDocs.map((doc) => (
+                  <RecentDocItem key={doc.id} doc={doc} />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-400">
+                  아직 업로드한 기초 자료가 없습니다.
                 </div>
               )}
             </div>
