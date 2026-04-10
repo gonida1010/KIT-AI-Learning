@@ -156,6 +156,7 @@ export default function MentorDashboard() {
   const [taBookings, setTaBookings] = useState([]);
   const [recentDocs, setRecentDocs] = useState([]);
   const [recentBasicDocs, setRecentBasicDocs] = useState([]);
+  const [pendingHandoffs, setPendingHandoffs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [basicUploading, setBasicUploading] = useState(false);
   const [error, setError] = useState("");
@@ -173,6 +174,7 @@ export default function MentorDashboard() {
       setTaBookings(data.ta_bookings || []);
       setRecentDocs(data.recent_docs || []);
       setRecentBasicDocs(data.recent_basic_docs || []);
+      setPendingHandoffs(data.pending_handoffs || []);
     }
   }, [token]);
 
@@ -292,6 +294,38 @@ export default function MentorDashboard() {
                         {b.booking_summary || b.booking_description}
                       </p>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {pendingHandoffs.length > 0 && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-700">
+                <Bell size={16} className="text-amber-500" />
+                1:1 상담 요청
+              </div>
+              <div className="space-y-2">
+                {pendingHandoffs.map((h) => (
+                  <div
+                    key={h.id}
+                    className="rounded-xl border border-amber-200 bg-amber-50 p-3"
+                  >
+                    <p className="text-sm font-medium text-slate-800">
+                      {h.student_name || h.student_id}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {h.reason || "상담 요청"}
+                    </p>
+                    {h.last_message && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        &quot;{h.last_message.slice(0, 80)}&quot;
+                      </p>
+                    )}
+                    <p className="mt-1 text-[11px] text-amber-500">
+                      {h.created_at?.replace("T", " ")?.slice(0, 16)}
+                    </p>
                   </div>
                 ))}
               </div>

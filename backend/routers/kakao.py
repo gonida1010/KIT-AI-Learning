@@ -5,7 +5,7 @@
 
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import re
 import traceback
 
@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 KAKAO_TEXT_LIMIT = 990  # simpleText 최대 1000자, 여유분 확보
 
 
+_KST = timezone(timedelta(hours=9))
+
+
 def _now():
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _uid():

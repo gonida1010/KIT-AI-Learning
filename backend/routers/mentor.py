@@ -55,14 +55,13 @@ async def _build_ai_digest(raw_text: str, fallback_name: str) -> tuple[str, str]
         cleaned = fallback_name
 
     prompt = """
-You are a learning material organizer for a Korean coding bootcamp mentor dashboard.
-Read the uploaded document and generate a short, student-friendly title and summary.
-ALL output text MUST be in Korean (한국어).
+당신은 멘토 전용 학습자료 정리 비서입니다.
+원문을 읽고 수강생에게 보여주기 좋은 짧은 제목과 요약을 만드세요.
 
-IMPORTANT: Respond ONLY with the JSON below. Do NOT include any other text.
+반드시 아래 JSON 형식으로만 답변하세요:
 {
-  "title": "Short descriptive title in Korean (max 80 chars)",
-  "summary": "1–2 sentence summary in Korean that helps students understand what this material covers"
+  "title": "짧은 제목",
+  "summary": "한두 문장 요약"
 }
 """
 
@@ -111,6 +110,11 @@ async def mentor_dashboard(token: str = ""):
     recent_basic_docs = store.get_mentor_basic_docs(mentor["id"])[:5]
     activity = store.get_recent_chat_activity(mentor["id"], hours=168)[:20]
     ta_bookings = store.get_ta_bookings_for_mentor(mentor["id"])[:8]
+    pending_handoffs = [
+        h for h in store.get_pending_handoffs()
+        if store.get_user(h.get("student_id", "")) and
+           (store.get_user(h["student_id"]) or {}).get("mentor_id") == mentor["id"]
+    ]
 
     return {
         "today_curations": today_curations,
@@ -118,6 +122,7 @@ async def mentor_dashboard(token: str = ""):
         "recent_basic_docs": [_serialize_basic_doc(doc) for doc in recent_basic_docs],
         "recent_activity": activity,
         "ta_bookings": ta_bookings,
+        "pending_handoffs": pending_handoffs,
     }
 
 
