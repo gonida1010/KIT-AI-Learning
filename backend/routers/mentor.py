@@ -214,7 +214,7 @@ async def upload_mentor_knowledge(
         "source_kind": source_kind,
         "digest_title": digest_title,
         "digest_summary": digest_summary,
-        "uploaded_at": datetime.now(_KST).isoformat(timespec="seconds"),
+        "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
         "file_data": payload if file is not None else None,
     }
@@ -363,7 +363,7 @@ async def upload_mentor_basic(
         "source_kind": source_kind,
         "digest_title": digest_title,
         "digest_summary": digest_summary,
-        "uploaded_at": datetime.now(_KST).isoformat(timespec="seconds"),
+        "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
         "file_data": payload if file is not None else None,
     }

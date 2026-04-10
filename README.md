@@ -142,7 +142,7 @@ KIT-AI-Learning/
 | 변수명                | 설명                                     |
 | --------------------- | ---------------------------------------- |
 | `OPENAI_API_KEY`      | OpenAI API 키                            |
-| `OPENAI_MODEL`        | 사용 모델 (예:`gpt-5.4-mini-2026-03-17`) |
+| `OPENAI_MODEL`        | 사용 모델 (예:`gpt-4o-mini`) |
 | `LLM_PROVIDER`        | LLM 공급자 (`openai`)                    |
 | `EMBEDDING_PROVIDER`  | 임베딩 공급자 (`openai`)                 |
 | `DATABASE_URL`        | PostgreSQL 접속 URL                      |

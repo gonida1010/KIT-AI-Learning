@@ -27,7 +27,7 @@ _KST = timezone(timedelta(hours=9))
 
 
 def _now() -> str:
-    return datetime.now(_KST).isoformat(timespec="seconds")
+    return datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _uid() -> str:
@@ -527,7 +527,7 @@ class Store:
 
     def get_recent_chat_activity(self, mentor_id: str, hours: int = 24) -> list[dict]:
         cutoff = datetime.now(_KST) - timedelta(hours=hours)
-        cutoff_str = cutoff.isoformat(timespec="seconds")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
 
         with self._session() as db:
             students = (

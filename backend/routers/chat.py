@@ -19,7 +19,7 @@ _KST = timezone(timedelta(hours=9))
 
 
 def _now():
-    return datetime.now(_KST).isoformat(timespec="seconds")
+    return datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _uid():

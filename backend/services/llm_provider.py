@@ -48,7 +48,7 @@ class LLMProvider(ABC):
 class OpenAIProvider(LLMProvider):
     """OpenAI API (gpt-5.4-mini 등)."""
 
-    def __init__(self, model: str = "gpt-5.4-mini-2026-03-17", temperature: float = 0.3):
+    def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.3):
         self.llm = ChatOpenAI(model=model, temperature=temperature)
         logger.info(f"OpenAI 프로바이더 초기화: {model}")
 
@@ -134,4 +134,4 @@ def create_llm_provider() -> LLMProvider:
     provider = os.getenv("LLM_PROVIDER", "openai").lower()
     if provider == "onpremise":
         return OnPremiseProvider()
-    return OpenAIProvider(model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini-2026-03-17"))
+    return OpenAIProvider(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))

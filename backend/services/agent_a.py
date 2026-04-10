@@ -249,7 +249,7 @@ async def handle_agent_a(
         store.add_event(
             user_id,
             {
-                "timestamp": datetime.now(_KST).isoformat(timespec="seconds"),
+                "timestamp": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
                 "event_type": "curation_view",
                 "content": f"큐레이션 조회: {', '.join(result['curation_refs'][:3])}",
                 "detail": message[:60],
