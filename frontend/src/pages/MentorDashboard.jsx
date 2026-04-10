@@ -254,7 +254,7 @@ export default function MentorDashboard() {
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
               <Upload size={16} className="text-primary-500" />
-              📖 최신 자료 첨부
+              최신 자료 첨부
             </div>
             <UploadDropZone onFileSelect={uploadFile} uploading={uploading} />
           </div>
@@ -262,9 +262,12 @@ export default function MentorDashboard() {
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700">
               <Upload size={16} className="text-blue-500" />
-              📘 기초 자료 첨부
+              기초 자료 첨부
             </div>
-            <UploadDropZone onFileSelect={uploadBasicFile} uploading={basicUploading} />
+            <UploadDropZone
+              onFileSelect={uploadBasicFile}
+              uploading={basicUploading}
+            />
           </div>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -289,8 +292,8 @@ export default function MentorDashboard() {
 
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <BookOpen size={16} className="text-primary-500" />
-              내 최신 자료 5개
+              <BookOpen size={16} className="text-primary-500" />내 최신 자료
+              5개
             </div>
             <div className="space-y-3">
               {recentDocs.length ? (
@@ -307,8 +310,7 @@ export default function MentorDashboard() {
 
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-700">
-              <BookOpen size={16} className="text-blue-500" />
-              내 기초 자료 5개
+              <BookOpen size={16} className="text-blue-500" />내 기초 자료 5개
             </div>
             <div className="space-y-3">
               {recentBasicDocs.length ? (

@@ -13,6 +13,8 @@ import {
   Download,
   Calendar,
   Clock,
+  BookOpen,
+  Handshake,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -120,28 +122,32 @@ function WelcomeActions({ onAction, disabled }) {
   const actions = [
     {
       key: "curation",
-      label: "📋 오늘의 큐레이션",
+      label: "오늘의 큐레이션",
+      icon: <Newspaper size={15} className="shrink-0" />,
       desc: "학원 공지 · 뉴스 · 채용 · 공모전",
       color:
         "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300",
     },
     {
       key: "ta",
-      label: "📅 조교 연결",
+      label: "조교 연결",
+      icon: <Calendar size={15} className="shrink-0" />,
       desc: "보충수업 예약 · 학습 질문",
       color:
         "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300",
     },
     {
       key: "tips",
-      label: "📚 학습 팁",
+      label: "학습 팁",
+      icon: <BookOpen size={15} className="shrink-0" />,
       desc: "담당 멘토 최신 자료",
       color:
         "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200 hover:border-violet-300",
     },
     {
       key: "mentor",
-      label: "🤝 멘토 연결",
+      label: "멘토 연결",
+      icon: <Handshake size={15} className="shrink-0" />,
       desc: "1:1 상담 요청",
       color:
         "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300",
@@ -156,7 +162,7 @@ function WelcomeActions({ onAction, disabled }) {
           disabled={disabled}
           className={`flex flex-col items-start px-3 py-2.5 border rounded-xl text-left transition-colors disabled:opacity-40 ${a.color}`}
         >
-          <span className="text-sm font-medium">{a.label}</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium">{a.icon}{a.label}</span>
           <span className="text-[11px] opacity-70 mt-0.5">{a.desc}</span>
         </button>
       ))}
@@ -254,7 +260,7 @@ export default function StudentChat() {
     setMessages([
       {
         role: "assistant",
-        content: `안녕하세요 ${user?.name || ""}님! 😊\n아래 메뉴를 선택하거나, 궁금한 점을 바로 입력해 주세요.`,
+        content: `안녕하세요 ${user?.name || ""}님!\n아래 메뉴를 선택하거나, 궁금한 점을 바로 입력해 주세요.`,
         agent_type: null,
         isWelcome: true,
       },
@@ -267,7 +273,7 @@ export default function StudentChat() {
     setSending(true);
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: "📋 오늘의 큐레이션" },
+      { role: "user", content: "오늘의 큐레이션" },
     ]);
     try {
       const res = await fetch("/api/curation/today");
@@ -288,7 +294,7 @@ export default function StudentChat() {
           ...prev,
           {
             role: "assistant",
-            content: `📋 오늘의 큐레이션 [${category}]\n총 ${items.length}건의 콘텐츠가 있습니다.`,
+            content: `오늘의 큐레이션 [${category}]\n총 ${items.length}건의 콘텐츠가 있습니다.`,
             agent_type: "agent_a",
             curation_items: items,
           },
@@ -313,14 +319,24 @@ export default function StudentChat() {
     if (sending) return;
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: "📚 학습 팁" },
+      { role: "user", content: "학습 팁" },
       {
         role: "assistant",
         content: "어떤 자료를 보고 싶으신가요?",
         agent_type: "agent_a",
         choices: [
-          { label: "📖 최신 자료", description: "멘토님이 최근 올린 자료", _action: "tips_type", _type: "latest" },
-          { label: "📘 기초 자료", description: "기본 학습 자료", _action: "tips_type", _type: "basic" },
+          {
+            label: "최신 자료",
+            description: "멘토님이 최근 올린 자료",
+            _action: "tips_type",
+            _type: "latest",
+          },
+          {
+            label: "기초 자료",
+            description: "기본 학습 자료",
+            _action: "tips_type",
+            _type: "basic",
+          },
         ],
       },
     ]);
@@ -329,7 +345,7 @@ export default function StudentChat() {
   const fetchTipsByType = async (type) => {
     if (sending) return;
     setSending(true);
-    const label = type === "basic" ? "📘 기초 자료" : "📖 최신 자료";
+    const label = type === "basic" ? "기초 자료" : "최신 자료";
     setMessages((prev) => [...prev, { role: "user", content: label }]);
     try {
       const token = localStorage.getItem("edu_sync_token");
@@ -343,8 +359,8 @@ export default function StudentChat() {
       const typeLabel = type === "basic" ? "기초" : "최신";
       const text =
         data.mentor_name && docs.length > 0
-          ? `📖 ${data.mentor_name} 멘토님의 ${typeLabel} 자료 (${docs.length}건)`
-          : `📖 아직 멘토님이 올린 ${typeLabel} 자료가 없습니다.`;
+          ? `${data.mentor_name} 멘토님의 ${typeLabel} 자료 (${docs.length}건)`
+          : `아직 멘토님이 올린 ${typeLabel} 자료가 없습니다.`;
       setMessages((prev) => [
         ...prev,
         {
@@ -449,7 +465,7 @@ export default function StudentChat() {
   const startBookingFlow = async () => {
     if (sending) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: "📅 조교 연결" }]);
+    setMessages((prev) => [...prev, { role: "user", content: "조교 연결" }]);
     try {
       const res = await fetch("/api/chat/booking/dates");
       const dates = await res.json();
@@ -481,7 +497,7 @@ export default function StudentChat() {
         ...prev,
         {
           role: "assistant",
-          content: "📅 예약 가능한 날짜를 선택해 주세요.",
+          content: "예약 가능한 날짜를 선택해 주세요.",
           agent_type: "agent_b",
           choices,
           isBookingDates: true,
@@ -504,7 +520,7 @@ export default function StudentChat() {
   const pickBookingDate = async (date) => {
     if (sending) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: `📅 ${date}` }]);
+    setMessages((prev) => [...prev, { role: "user", content: date }]);
     try {
       const res = await fetch(`/api/chat/booking/slots?date=${date}`);
       const slots = await res.json();
@@ -532,7 +548,7 @@ export default function StudentChat() {
         ...prev,
         {
           role: "assistant",
-          content: `⏰ ${date} 예약 가능 시간을 선택해 주세요.`,
+          content: `${date} 예약 가능 시간을 선택해 주세요.`,
           agent_type: "agent_b",
           choices,
           isBookingSlots: true,
@@ -555,7 +571,7 @@ export default function StudentChat() {
   const confirmBookingSlot = async (slotId, label) => {
     if (sending) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: `⏰ ${label}` }]);
+    setMessages((prev) => [...prev, { role: "user", content: label }]);
     try {
       const token = localStorage.getItem("edu_sync_token");
       const res = await fetch("/api/chat/booking/confirm", {

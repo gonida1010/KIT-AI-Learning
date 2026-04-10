@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import {
+  BookOpen,
   ExternalLink,
   FileText,
   Link2,
@@ -147,8 +148,14 @@ export default function KnowledgeBase() {
 
   const latestDocs = useMemo(() => docs.filter((doc) => !doc.is_stale), [docs]);
   const staleDocs = useMemo(() => docs.filter((doc) => doc.is_stale), [docs]);
-  const basicLatest = useMemo(() => basicDocs.filter((doc) => !doc.is_stale), [basicDocs]);
-  const basicStale = useMemo(() => basicDocs.filter((doc) => doc.is_stale), [basicDocs]);
+  const basicLatest = useMemo(
+    () => basicDocs.filter((doc) => !doc.is_stale),
+    [basicDocs],
+  );
+  const basicStale = useMemo(
+    () => basicDocs.filter((doc) => doc.is_stale),
+    [basicDocs],
+  );
 
   // 최신 자료 업로드
   const uploadFile = async (file) => {
@@ -159,10 +166,20 @@ export default function KnowledgeBase() {
     formData.append("token", token || "");
     formData.append("file", file);
     try {
-      const res = await fetch("/api/mentor/knowledge/upload", { method: "POST", body: formData });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "업로드 실패"); }
+      const res = await fetch("/api/mentor/knowledge/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "업로드 실패");
+      }
       await fetchDocs();
-    } catch (e) { setError(e.message); } finally { setUploading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const uploadLink = async () => {
@@ -173,16 +190,32 @@ export default function KnowledgeBase() {
     formData.append("token", token || "");
     formData.append("source_link", sourceLink.trim());
     try {
-      const res = await fetch("/api/mentor/knowledge/upload", { method: "POST", body: formData });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "링크 등록 실패"); }
+      const res = await fetch("/api/mentor/knowledge/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "링크 등록 실패");
+      }
       setSourceLink("");
       await fetchDocs();
-    } catch (e) { setError(e.message); } finally { setUploading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDelete = async (docId) => {
-    const res = await fetch(`/api/mentor/knowledge/${docId}?token=${encodeURIComponent(token || "")}`, { method: "DELETE" }).catch(() => null);
-    if (!res?.ok) { setError("삭제 실패"); return; }
+    const res = await fetch(
+      `/api/mentor/knowledge/${docId}?token=${encodeURIComponent(token || "")}`,
+      { method: "DELETE" },
+    ).catch(() => null);
+    if (!res?.ok) {
+      setError("삭제 실패");
+      return;
+    }
     setDocs((prev) => prev.filter((d) => d.id !== docId));
   };
 
@@ -195,10 +228,20 @@ export default function KnowledgeBase() {
     formData.append("token", token || "");
     formData.append("file", file);
     try {
-      const res = await fetch("/api/mentor/basic/upload", { method: "POST", body: formData });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "업로드 실패"); }
+      const res = await fetch("/api/mentor/basic/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "업로드 실패");
+      }
       await fetchBasicDocs();
-    } catch (e) { setError(e.message); } finally { setBasicUploading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBasicUploading(false);
+    }
   };
 
   const uploadBasicLink = async () => {
@@ -209,16 +252,32 @@ export default function KnowledgeBase() {
     formData.append("token", token || "");
     formData.append("source_link", basicSourceLink.trim());
     try {
-      const res = await fetch("/api/mentor/basic/upload", { method: "POST", body: formData });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || "링크 등록 실패"); }
+      const res = await fetch("/api/mentor/basic/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || "링크 등록 실패");
+      }
       setBasicSourceLink("");
       await fetchBasicDocs();
-    } catch (e) { setError(e.message); } finally { setBasicUploading(false); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBasicUploading(false);
+    }
   };
 
   const handleBasicDelete = async (docId) => {
-    const res = await fetch(`/api/mentor/basic/${docId}?token=${encodeURIComponent(token || "")}`, { method: "DELETE" }).catch(() => null);
-    if (!res?.ok) { setError("삭제 실패"); return; }
+    const res = await fetch(
+      `/api/mentor/basic/${docId}?token=${encodeURIComponent(token || "")}`,
+      { method: "DELETE" },
+    ).catch(() => null);
+    if (!res?.ok) {
+      setError("삭제 실패");
+      return;
+    }
     setBasicDocs((prev) => prev.filter((d) => d.id !== docId));
   };
 
@@ -232,15 +291,17 @@ export default function KnowledgeBase() {
       <div className="flex gap-2">
         <button
           onClick={() => setActiveTab("latest")}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${activeTab === "latest" ? "bg-primary-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${activeTab === "latest" ? "bg-primary-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
         >
-          📖 최신 자료
+          <BookOpen size={15} />
+          최신 자료
         </button>
         <button
           onClick={() => setActiveTab("basic")}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${activeTab === "basic" ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${activeTab === "basic" ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
         >
-          📘 기초 자료
+          <FileText size={15} />
+          기초 자료
         </button>
       </div>
 
@@ -260,10 +321,17 @@ export default function KnowledgeBase() {
                   <Link2 size={14} /> 링크 등록
                 </div>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <input value={sourceLink} onChange={(e) => setSourceLink(e.target.value)} placeholder="https://example.com"
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-primary-300" />
-                  <button onClick={uploadLink} disabled={uploading || !sourceLink.trim()}
-                    className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40">
+                  <input
+                    value={sourceLink}
+                    onChange={(e) => setSourceLink(e.target.value)}
+                    placeholder="https://example.com"
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-primary-300"
+                  />
+                  <button
+                    onClick={uploadLink}
+                    disabled={uploading || !sourceLink.trim()}
+                    className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+                  >
                     링크 등록
                   </button>
                 </div>
@@ -272,17 +340,28 @@ export default function KnowledgeBase() {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="relative">
-                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="최신 자료 검색"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm text-slate-800 outline-none focus:border-primary-300" />
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="최신 자료 검색"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm text-slate-800 outline-none focus:border-primary-300"
+                />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-slate-50 p-5 text-center">
-                  <p className="text-2xl font-bold text-slate-800">{latestDocs.length}</p>
+                  <p className="text-2xl font-bold text-slate-800">
+                    {latestDocs.length}
+                  </p>
                   <p className="mt-1 text-xs text-slate-500">최신 자료</p>
                 </div>
                 <div className="rounded-2xl bg-amber-50 p-5 text-center">
-                  <p className="text-2xl font-bold text-amber-700">{staleDocs.length}</p>
+                  <p className="text-2xl font-bold text-amber-700">
+                    {staleDocs.length}
+                  </p>
                   <p className="mt-1 text-xs text-amber-700">오래된 자료</p>
                 </div>
               </div>
@@ -290,23 +369,40 @@ export default function KnowledgeBase() {
           </div>
 
           <section>
-            <div className="mb-3 text-sm font-semibold text-slate-700">최신 올린 자료</div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">
+              최신 올린 자료
+            </div>
             <div className="space-y-3">
-              {latestDocs.length ? latestDocs.map((doc) => (
-                <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
-              )) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">최신 자료가 없습니다.</div>
+              {latestDocs.length ? (
+                latestDocs.map((doc) => (
+                  <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+                  최신 자료가 없습니다.
+                </div>
               )}
             </div>
           </section>
 
-          {staleDocs.length > 0 && (
+          {staleDocs.length > 0 ? (
             <section>
-              <div className="mb-3 text-sm font-semibold text-slate-700">오래된 자료</div>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                오래된 자료
+              </div>
               <div className="space-y-3">
                 {staleDocs.map((doc) => (
                   <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
                 ))}
+              </div>
+            </section>
+          ) : (
+            <section>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                오래된 자료
+              </div>
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+                삭제가 필요한 오래된 자료가 없습니다.
               </div>
             </section>
           )}
@@ -319,16 +415,26 @@ export default function KnowledgeBase() {
                 <Upload size={16} className="text-blue-500" />
                 기초 자료 올리기
               </div>
-              <DropZone onFileSelect={uploadBasicFile} uploading={basicUploading} />
+              <DropZone
+                onFileSelect={uploadBasicFile}
+                uploading={basicUploading}
+              />
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                   <Link2 size={14} /> 링크 등록
                 </div>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <input value={basicSourceLink} onChange={(e) => setBasicSourceLink(e.target.value)} placeholder="https://example.com"
-                    className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-300" />
-                  <button onClick={uploadBasicLink} disabled={basicUploading || !basicSourceLink.trim()}
-                    className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40">
+                  <input
+                    value={basicSourceLink}
+                    onChange={(e) => setBasicSourceLink(e.target.value)}
+                    placeholder="https://example.com"
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-300"
+                  />
+                  <button
+                    onClick={uploadBasicLink}
+                    disabled={basicUploading || !basicSourceLink.trim()}
+                    className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+                  >
                     링크 등록
                   </button>
                 </div>
@@ -337,17 +443,28 @@ export default function KnowledgeBase() {
 
             <div className="rounded-2xl border border-blue-200 bg-white p-5">
               <div className="relative">
-                <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={basicSearch} onChange={(e) => setBasicSearch(e.target.value)} placeholder="기초 자료 검색"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm text-slate-800 outline-none focus:border-blue-300" />
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={basicSearch}
+                  onChange={(e) => setBasicSearch(e.target.value)}
+                  placeholder="기초 자료 검색"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-12 pr-4 text-sm text-slate-800 outline-none focus:border-blue-300"
+                />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-blue-50 p-5 text-center">
-                  <p className="text-2xl font-bold text-blue-800">{basicLatest.length}</p>
+                  <p className="text-2xl font-bold text-blue-800">
+                    {basicLatest.length}
+                  </p>
                   <p className="mt-1 text-xs text-blue-600">기초 자료</p>
                 </div>
                 <div className="rounded-2xl bg-amber-50 p-5 text-center">
-                  <p className="text-2xl font-bold text-amber-700">{basicStale.length}</p>
+                  <p className="text-2xl font-bold text-amber-700">
+                    {basicStale.length}
+                  </p>
                   <p className="mt-1 text-xs text-amber-700">오래된 자료</p>
                 </div>
               </div>
@@ -355,23 +472,48 @@ export default function KnowledgeBase() {
           </div>
 
           <section>
-            <div className="mb-3 text-sm font-semibold text-blue-700">기초 자료 목록</div>
+            <div className="mb-3 text-sm font-semibold text-blue-700">
+              기초 자료 목록
+            </div>
             <div className="space-y-3">
-              {basicLatest.length ? basicLatest.map((doc) => (
-                <DocCard key={doc.id} doc={doc} onDelete={handleBasicDelete} />
-              )) : (
-                <div className="rounded-2xl border border-dashed border-blue-200 bg-white p-8 text-center text-sm text-slate-400">기초 자료가 없습니다.</div>
+              {basicLatest.length ? (
+                basicLatest.map((doc) => (
+                  <DocCard
+                    key={doc.id}
+                    doc={doc}
+                    onDelete={handleBasicDelete}
+                  />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-blue-200 bg-white p-8 text-center text-sm text-slate-400">
+                  기초 자료가 없습니다.
+                </div>
               )}
             </div>
           </section>
 
-          {basicStale.length > 0 && (
+          {basicStale.length > 0 ? (
             <section>
-              <div className="mb-3 text-sm font-semibold text-slate-700">오래된 기초 자료</div>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                오래된 기초 자료
+              </div>
               <div className="space-y-3">
                 {basicStale.map((doc) => (
-                  <DocCard key={doc.id} doc={doc} onDelete={handleBasicDelete} />
+                  <DocCard
+                    key={doc.id}
+                    doc={doc}
+                    onDelete={handleBasicDelete}
+                  />
                 ))}
+              </div>
+            </section>
+          ) : (
+            <section>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                오래된 기초 자료
+              </div>
+              <div className="rounded-2xl border border-dashed border-blue-200 bg-white p-8 text-center text-sm text-slate-400">
+                삭제가 필요한 오래된 기초 자료가 없습니다.
               </div>
             </section>
           )}
