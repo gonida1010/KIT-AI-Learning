@@ -590,11 +590,11 @@ async def add_base_template_slots(req: BaseScheduleRequest):
 
 @router.delete("/slots/{slot_id}")
 async def delete_slot(slot_id: str):
-    for index, slot in enumerate(store.schedules):
-        if slot["id"] == slot_id:
-            if slot.get("booked_by"):
-                raise HTTPException(400, "이미 예약된 슬롯은 삭제할 수 없습니다.")
-            store.schedules.pop(index)
-            store._save()
-            return {"status": "ok"}
-    raise HTTPException(404, "슬롯을 찾을 수 없습니다.")
+    # 먼저 슬롯 조회
+    slot = next((s for s in store.get_all_slots() if s["id"] == slot_id), None)
+    if not slot:
+        raise HTTPException(404, "슬롯을 찾을 수 없습니다.")
+    if slot.get("booked_by"):
+        raise HTTPException(400, "이미 예약된 슬롯은 삭제할 수 없습니다.")
+    store.remove_slot(slot_id)
+    return {"status": "ok"}

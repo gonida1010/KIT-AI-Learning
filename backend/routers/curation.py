@@ -183,7 +183,7 @@ async def upload_curation(
 
 @router.get("/assets/{item_id}")
 async def open_curation_asset(item_id: str):
-    item = next((entry for entry in store.curation_items if entry.get("id") == item_id), None)
+    item = store.get_curation_by_id(item_id)
     if not item:
         raise HTTPException(404, "항목 없음")
 
@@ -204,19 +204,18 @@ async def open_curation_asset(item_id: str):
 
 @router.delete("/items/{item_id}")
 async def delete_curation(item_id: str):
-    for i, item in enumerate(store.curation_items):
-        if item["id"] == item_id:
-            file_name = item.get("source_filename")
-            if file_name:
-                asset_path = CURATION_ASSET_DIR / file_name
-                if asset_path.exists():
-                    asset_path.unlink()
-            store.curation_items.pop(i)
-            store._save()
-            # 벡터스토어 재빌드 (삭제 후 동기화)
-            build_curation_vectorstore(store.curation_items)
-            return {"status": "ok"}
-    raise HTTPException(404, "항목 없음")
+    item = store.get_curation_by_id(item_id)
+    if not item:
+        raise HTTPException(404, "항목 없음")
+    file_name = item.get("source_filename")
+    if file_name:
+        asset_path = CURATION_ASSET_DIR / file_name
+        if asset_path.exists():
+            asset_path.unlink()
+    store.remove_curation(item_id)
+    # 벡터스토어 재빌드 (삭제 후 동기화)
+    build_curation_vectorstore(store.curation_items)
+    return {"status": "ok"}
 
 
 @router.put("/items/{item_id}")
@@ -224,12 +223,13 @@ async def update_curation(item_id: str, req: UpdateCurationRequest):
     if _find_curation_by_date(req.date, exclude_item_id=item_id):
         raise HTTPException(400, "해당 날짜에는 이미 다른 큐레이션 자료가 있습니다. 기존 자료를 삭제하거나 다른 날짜를 선택해 주세요.")
 
-    for item in store.curation_items:
-        if item["id"] == item_id:
-            item["category"] = req.category
-            item["date"] = req.date
-            item["weekday"] = datetime.strptime(req.date, "%Y-%m-%d").weekday()
-            store._save()
-            build_curation_vectorstore(store.curation_items)
-            return {"status": "ok", "item": _serialize_curation(item)}
-    raise HTTPException(404, "항목 없음")
+    weekday = datetime.strptime(req.date, "%Y-%m-%d").weekday()
+    updated = store.update_curation(item_id, {
+        "category": req.category,
+        "date": req.date,
+        "weekday": weekday,
+    })
+    if not updated:
+        raise HTTPException(404, "항목 없음")
+    build_curation_vectorstore(store.curation_items)
+    return {"status": "ok", "item": _serialize_curation(updated)}

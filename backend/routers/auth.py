@@ -99,8 +99,8 @@ async def kakao_callback(req: KakaoCallbackReq):
     user = store.get_user_by_kakao_id(kakao_id)
     if not user:
         mentor_id = None
-        if req.invite_code and req.invite_code in store.invite_codes:
-            mentor_id = store.invite_codes[req.invite_code]
+        if req.invite_code:
+            mentor_id = store.get_invite_code(req.invite_code)
         user = store.create_user({
             "id": uuid.uuid4().hex[:12],
             "kakao_id": kakao_id,
@@ -114,11 +114,13 @@ async def kakao_callback(req: KakaoCallbackReq):
         })
         logger.info(f"신규 가입: {nickname} (kakao {kakao_id})")
     else:
-        user["name"] = nickname
-        user["profile_image"] = profile_image
-        if req.invite_code and req.invite_code in store.invite_codes and not user.get("mentor_id"):
-            user["mentor_id"] = store.invite_codes[req.invite_code]
-        store._save()
+        updates = {"name": nickname, "profile_image": profile_image}
+        if req.invite_code and not user.get("mentor_id"):
+            linked = store.get_invite_code(req.invite_code)
+            if linked:
+                updates["mentor_id"] = linked
+        store.update_user(user["id"], updates)
+        user.update(updates)
 
     token = uuid.uuid4().hex
     store.create_session(token, user["id"], "kakao")
@@ -137,13 +139,12 @@ async def kakao_callback(req: KakaoCallbackReq):
 async def qr_generate():
     """PC에서 QR 코드 표시용 세션 생성."""
     qr_token = uuid.uuid4().hex[:16]
-    store.qr_sessions[qr_token] = {
+    store.set_qr_session(qr_token, {
         "status": "pending",
         "user_id": None,
         "session_token": None,
         "created_at": _now(),
-    }
-    store._save()
+    })
     return {
         "qr_token": qr_token,
         "qr_url": f"{FRONTEND_URL}/?qr_approve={qr_token}",
@@ -153,7 +154,7 @@ async def qr_generate():
 @router.get("/qr/check")
 async def qr_check(token: str):
     """PC에서 QR 상태 폴링."""
-    qr = store.qr_sessions.get(token)
+    qr = store.get_qr_session(token)
     if not qr:
         raise HTTPException(404, "QR 세션 없음")
     if qr["status"] == "approved" and qr.get("session_token"):
@@ -173,7 +174,7 @@ async def qr_check(token: str):
 @router.post("/qr/approve")
 async def qr_approve(req: QRApproveReq):
     """모바일에서 QR 스캔 후 승인."""
-    qr = store.qr_sessions.get(req.qr_token)
+    qr = store.get_qr_session(req.qr_token)
     if not qr:
         raise HTTPException(404, "QR 세션 없음")
     if qr["status"] != "pending":
@@ -185,10 +186,11 @@ async def qr_approve(req: QRApproveReq):
 
     new_token = uuid.uuid4().hex
     store.create_session(new_token, user_id, "qr")
-    qr["status"] = "approved"
-    qr["user_id"] = user_id
-    qr["session_token"] = new_token
-    store._save()
+    store.update_qr_session(req.qr_token, {
+        "status": "approved",
+        "user_id": user_id,
+        "session_token": new_token,
+    })
     return {"status": "ok"}
 
 
@@ -221,8 +223,7 @@ async def update_role(token: str = "", role: str = ""):
     user = store.get_user(user_id)
     if not user:
         raise HTTPException(404, "사용자 없음")
-    user["role"] = role
-    store._save()
+    store.update_user(user_id, {"role": role})
     return {"status": "ok", "role": role}
 
 
@@ -242,14 +243,13 @@ async def link_mentor(req: LinkMentorReq, token: str = ""):
     user_id = store.get_session(token)
     if not user_id:
         raise HTTPException(401, "유효하지 않은 세션")
-    mentor_id = store.invite_codes.get(req.invite_code)
+    mentor_id = store.get_invite_code(req.invite_code)
     if not mentor_id:
         raise HTTPException(404, "유효하지 않은 초대 코드")
     user = store.get_user(user_id)
     if not user:
         raise HTTPException(404, "사용자 없음")
-    user["mentor_id"] = mentor_id
-    store._save()
+    store.update_user(user_id, {"mentor_id": mentor_id})
     return {"status": "ok", "mentor_id": mentor_id}
 
 

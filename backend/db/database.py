@@ -1,0 +1,46 @@
+"""
+SQLAlchemy 엔진 및 세션 팩토리.
+DATABASE_URL 설정 시 PostgreSQL, 미설정 시 SQLite(로컬 개발용).
+"""
+
+import os
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# Render 등에서 postgres:// 로 시작하는 URL을 postgresql:// 로 변환
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# DATABASE_URL 미설정 시 SQLite 사용 (로컬 개발용)
+if not DATABASE_URL:
+    _db_path = Path(__file__).resolve().parent / "app.db"
+    DATABASE_URL = f"sqlite:///{_db_path}"
+
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+_engine_kwargs = {"pool_pre_ping": True}
+if _is_sqlite:
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    _engine_kwargs.update(pool_size=5, max_overflow=10)
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+Base = declarative_base()
+
+
+def get_db():
+    """FastAPI Depends 또는 수동 사용 가능한 세션 제너레이터."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def init_db():
+    """모든 테이블 생성 (없으면 CREATE)."""
+    Base.metadata.create_all(bind=engine)

@@ -156,8 +156,7 @@ async def _kakao_webhook_inner(request: Request):
             llm_provider,
         )
         if student and normalized["student_name"] and student.get("name", "").startswith("카카오 유저"):
-            student["name"] = normalized["student_name"]
-            store._save()
+            store.update_user(student_id, {"name": normalized["student_name"]})
 
         events = store.get_student_events(student_id)
         keywords = [event["content"] for event in events if event["event_type"] == "search"]

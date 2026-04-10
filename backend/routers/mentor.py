@@ -254,10 +254,6 @@ async def create_invite(mentor_id: str = "mentor_001"):
     code = mentor.get("invite_code")
     if not code:
         code = uuid.uuid4().hex[:8].upper()
-        mentor["invite_code"] = code
-        store.invite_codes[code] = mentor_id
-        store._save()
-    else:
-        store.invite_codes[code] = mentor_id
-        store._save()
+        store.update_user(mentor_id, {"invite_code": code})
+    store.set_invite_code(code, mentor_id)
     return {"invite_code": code, "invite_url": f"/?invite={code}"}
