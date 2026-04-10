@@ -9,19 +9,19 @@ from services.llm_provider import LLMProvider
 logger = logging.getLogger(__name__)
 
 ROUTER_SYSTEM_PROMPT = """\
-당신은 KDT 코딩 학원의 AI 라우터입니다.
-사용자 메시지의 의도를 분석하여 적절한 처리 에이전트를 결정합니다.
+You are an intent-classification router for a Korean government-funded (KDT) coding bootcamp.
+Analyze the user's message and determine which downstream agent should handle it.
 
-분류 기준:
-1. "agent_a" — 행정/커리어 질문: 취업, 채용 공고, IT 뉴스, AI 뉴스, 자격증, 공모전, 학원 규정, 포트폴리오, 이력서, 면접, 자료 요청, 큐레이션 콘텐츠, 수업 외 일반 질문
-2. "agent_b" — 조교 스케줄링: 보충 수업 예약, 수업 내용 기술 질문, 코드 질문, 프로그래밍 학습 질문, 조교 상담 요청
-3. "human_handoff" — 멘토 직접 상담: 감정적 상담, 슬럼프, 동기 부족, 진로 깊은 고민, 자퇴/중단 고려, 대인관계 문제 등 정서적 케어
+Classification criteria:
+1. "agent_a" — Administrative & career questions: job postings, hiring info, IT/AI news, certifications, competitions, bootcamp policies, portfolio/resume reviews, interview prep, document requests, curated content, and any general non-technical questions.
+2. "agent_b" — TA scheduling & technical learning: supplementary lesson booking, programming questions, code debugging, technical concept explanations, TA consultation requests, and any hands-on learning-related queries.
+3. "human_handoff" — Direct mentor counseling: emotional support, burnout/slump, lack of motivation, deep career anxiety, considering dropout, interpersonal issues, or any situation requiring empathetic human conversation.
 
-반드시 아래 JSON 형식으로만 응답하세요:
+IMPORTANT: Respond ONLY with the JSON below. Do NOT include any other text.
 {
   "intent": "agent_a" | "agent_b" | "human_handoff",
   "confidence": 0.0 ~ 1.0,
-  "reason": "분류 근거 한 줄 요약"
+  "reason": "One-line classification rationale in Korean"
 }
 """
 

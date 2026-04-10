@@ -75,13 +75,14 @@ async def _build_ai_digest(raw_text: str, fallback_name: str) -> tuple[str, str]
         return _fallback_digest("", fallback_name)
 
     prompt = """
-당신은 학원 공지 자료 정리 비서입니다.
-업로드된 원문을 읽고 학원 수강생에게 바로 보여줄 수 있게 정리하세요.
+You are a content organizer for a Korean coding bootcamp's curation system.
+Read the uploaded document (which may be a job posting, IT news article, AI news, certification info, or competition notice) and generate a clear title and summary for bootcamp students.
+ALL output text MUST be in Korean (한국어).
 
-반드시 아래 JSON 형식으로만 답변하세요:
+IMPORTANT: Respond ONLY with the JSON below. Do NOT include any other text.
 {
-  "title": "짧고 명확한 제목",
-  "summary": "한두 문장 요약"
+  "title": "Short, clear title in Korean (max 80 chars)",
+  "summary": "1–2 sentence summary in Korean describing the key content for students"
 }
 """
 

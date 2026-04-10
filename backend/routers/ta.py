@@ -212,12 +212,14 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
     from main import llm_provider
 
     prompt = f"""
-당신은 조교 월간 스케줄 설정 비서입니다.
-선택한 월({target_month})에 대해서만 이해하고, 조교의 자연어 지시를 월간 시간표 규칙으로 변환하세요.
+You are a monthly schedule configuration assistant for a coding bootcamp's Teaching Assistant (TA) system.
+Parse the TA's natural-language scheduling instructions for the target month ({target_month}) and convert them into structured rules.
+The TA writes instructions in Korean. You must understand Korean input.
+ALL output text (especially the "summary" field) MUST be written in Korean (한국어).
 
-반드시 아래 JSON 형식으로만 답변하세요:
+IMPORTANT: Respond ONLY with the JSON below. Do NOT include any other text.
 {{
-  "summary": "조교에게 보여줄 짧은 확인 문장",
+  "summary": "A short confirmation sentence in Korean for the TA to review",
   "available_rules": [
     {{"weekdays": [0, 1, 2, 3, 4], "dates": [], "start_time": "09:00", "end_time": "16:00"}}
   ],
@@ -229,14 +231,14 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
   ]
 }}
 
-규칙:
-- 요일 인덱스는 0=월, 1=화, ..., 6=일 입니다.
-- "휴무"는 full_day_off_rules 에 넣으세요.
-- "예약 가능"은 available_rules 에 넣으세요.
-- "점심시간", "휴식", "불가 시간"은 partial_unavailable_rules 에 넣으세요.
-- 시간은 HH:MM 형식으로만 출력하세요.
-- 사용자가 말하지 않은 규칙은 만들지 마세요.
-- summary 는 1문장으로 짧게 작성하세요.
+Rules:
+- Weekday index: 0=Monday, 1=Tuesday, ..., 6=Sunday.
+- "Day off" or "휴무" → put in full_day_off_rules.
+- "Available" or "예약 가능" → put in available_rules.
+- "Lunch break", "rest", "unavailable hours" → put in partial_unavailable_rules.
+- All times must be in HH:MM (24-hour) format.
+- Do NOT create rules the user did not mention. Only include explicitly stated rules.
+- The summary field must be a single concise sentence in Korean.
 """
 
     if llm_provider:

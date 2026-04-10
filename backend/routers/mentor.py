@@ -55,13 +55,14 @@ async def _build_ai_digest(raw_text: str, fallback_name: str) -> tuple[str, str]
         cleaned = fallback_name
 
     prompt = """
-당신은 멘토 전용 학습자료 정리 비서입니다.
-원문을 읽고 수강생에게 보여주기 좋은 짧은 제목과 요약을 만드세요.
+You are a learning material organizer for a Korean coding bootcamp mentor dashboard.
+Read the uploaded document and generate a short, student-friendly title and summary.
+ALL output text MUST be in Korean (한국어).
 
-반드시 아래 JSON 형식으로만 답변하세요:
+IMPORTANT: Respond ONLY with the JSON below. Do NOT include any other text.
 {
-  "title": "짧은 제목",
-  "summary": "한두 문장 요약"
+  "title": "Short descriptive title in Korean (max 80 chars)",
+  "summary": "1–2 sentence summary in Korean that helps students understand what this material covers"
 }
 """
 
