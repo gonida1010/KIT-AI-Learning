@@ -8,33 +8,33 @@
 
 ### Backend
 
-| 기술 | 버전 | 용도 |
-| ---- | ---- | ---- |
-| **FastAPI** | Python 3.11+ | REST API 서버, SPA 정적 서빙 |
-| **LangChain** | — | LLM 비동기 호출, RAG 체인 구성 |
-| **OpenAI GPT-4o-mini** | — | 챗봇 응답, 문서 요약, 의도 분류 |
-| **FAISS** | faiss-cpu | 벡터 검색 엔진 (RAG) |
-| **SQLAlchemy 2.0** | — | ORM, 데이터베이스 추상화 |
-| **PostgreSQL** | — | 주 데이터베이스 (Render 호스팅) |
-| **pypdf** | — | PDF 문서 텍스트 추출 |
+| 기술                   | 버전         | 용도                            |
+| ---------------------- | ------------ | ------------------------------- |
+| **FastAPI**            | Python 3.11+ | REST API 서버, SPA 정적 서빙    |
+| **LangChain**          | —            | LLM 비동기 호출, RAG 체인 구성  |
+| **OpenAI GPT-4o-mini** | —            | 챗봇 응답, 문서 요약, 의도 분류 |
+| **FAISS**              | faiss-cpu    | 벡터 검색 엔진 (RAG)            |
+| **SQLAlchemy 2.0**     | —            | ORM, 데이터베이스 추상화        |
+| **PostgreSQL**         | —            | 주 데이터베이스 (Render 호스팅) |
+| **pypdf**              | —            | PDF 문서 텍스트 추출            |
 
 ### Frontend
 
-| 기술 | 버전 | 용도 |
-| ---- | ---- | ---- |
-| **React** | 19 | SPA 프레임워크 |
-| **Vite** | — | 빌드 도구, HMR 개발 서버 |
-| **Tailwind CSS** | 4 | 유틸리티 기반 스타일링 |
-| **Lucide React** | — | 아이콘 시스템 |
-| **Framer Motion** | — | UI 애니메이션 |
+| 기술              | 버전 | 용도                     |
+| ----------------- | ---- | ------------------------ |
+| **React**         | 19   | SPA 프레임워크           |
+| **Vite**          | —    | 빌드 도구, HMR 개발 서버 |
+| **Tailwind CSS**  | 4    | 유틸리티 기반 스타일링   |
+| **Lucide React**  | —    | 아이콘 시스템            |
+| **Framer Motion** | —    | UI 애니메이션            |
 
 ### 인프라
 
-| 기술 | 용도 |
-| ---- | ---- |
-| **Render** | 웹 서비스 + PostgreSQL 호스팅, GitHub 자동 배포 |
-| **카카오 OAuth 2.0** | 카카오 로그인 연동 |
-| **세션 토큰** | 웹 인증 관리 |
+| 기술                 | 용도                                            |
+| -------------------- | ----------------------------------------------- |
+| **Render**           | 웹 서비스 + PostgreSQL 호스팅, GitHub 자동 배포 |
+| **카카오 OAuth 2.0** | 카카오 로그인 연동                              |
+| **세션 토큰**        | 웹 인증 관리                                    |
 
 ---
 
@@ -149,19 +149,19 @@
 
 ### 주요 테이블
 
-| 테이블 | 용도 |
-| ------ | ---- |
-| `users` | 사용자 계정 (역할: admin/mentor/ta/student) |
-| `rooms` | 채팅방 (학생-AI, 멘토-학생) |
-| `messages` | 대화 메시지 이력 |
-| `booked_slots` | 조교 예약 정보 |
-| `ta_slots` | 조교 가용 시간대 |
-| `curations` | 큐레이션 컨텐츠 |
-| `mentor_docs` | 멘토 최신 자료 (파일 바이너리 포함) |
-| `mentor_basic_docs` | 멘토 기초 자료 (파일 바이너리 포함) |
-| `briefing_reports` | AI 브리핑 리포트 |
-| `handoff_requests` | 1:1 멘토 상담 요청 |
-| `invite_codes` | 수강생 초대 코드 |
+| 테이블              | 용도                                        |
+| ------------------- | ------------------------------------------- |
+| `users`             | 사용자 계정 (역할: admin/mentor/ta/student) |
+| `rooms`             | 채팅방 (학생-AI, 멘토-학생)                 |
+| `messages`          | 대화 메시지 이력                            |
+| `booked_slots`      | 조교 예약 정보                              |
+| `ta_slots`          | 조교 가용 시간대                            |
+| `curations`         | 큐레이션 컨텐츠                             |
+| `mentor_docs`       | 멘토 최신 자료 (파일 바이너리 포함)         |
+| `mentor_basic_docs` | 멘토 기초 자료 (파일 바이너리 포함)         |
+| `briefing_reports`  | AI 브리핑 리포트                            |
+| `handoff_requests`  | 1:1 멘토 상담 요청                          |
+| `invite_codes`      | 수강생 초대 코드                            |
 
 ### 파일 저장 전략
 
@@ -217,35 +217,35 @@ vectorstore_mentor_basic/       ← 멘토별 기초 자료
 
 ## 7. 배포 구조
 
-| 항목 | 설정 |
-| ---- | ---- |
-| **플랫폼** | Render (Web Service) |
-| **빌드** | `cd frontend && npm install && npm run build` |
-| **실행** | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
-| **DB** | PostgreSQL (Render 관리형) |
-| **자동 배포** | GitHub `main` 브랜치 push 시 자동 |
-| **정적 파일** | `frontend/dist/`를 FastAPI에서 직접 서빙 (SPA) |
+| 항목          | 설정                                                   |
+| ------------- | ------------------------------------------------------ |
+| **플랫폼**    | Render (Web Service)                                   |
+| **빌드**      | `cd frontend && npm install && npm run build`          |
+| **실행**      | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+| **DB**        | PostgreSQL (Render 관리형)                             |
+| **자동 배포** | GitHub `main` 브랜치 push 시 자동                      |
+| **정적 파일** | `frontend/dist/`를 FastAPI에서 직접 서빙 (SPA)         |
 
 ---
 
 ## 8. API 엔드포인트 맵
 
-| 경로 | 메서드 | 설명 |
-| ---- | ------ | ---- |
-| `/api/auth/login` | POST | 이메일/비밀번호 로그인 |
-| `/api/auth/login/kakao` | POST | 카카오 OAuth 로그인 |
-| `/api/chat` | POST | 챗봇 메시지 (자동 에이전트 라우팅) |
-| `/api/chat/tips` | POST | 학습 팁 조회 (최신/기초) |
-| `/api/chat/booking/dates` | GET | 예약 가능 날짜 목록 |
-| `/api/chat/booking/slots` | GET | 특정 날짜 시간대 목록 |
-| `/api/chat/booking/confirm` | POST | 예약 확정 + 브리핑 생성 |
-| `/api/chat/booking/my` | GET | 내 예약 목록 |
-| `/api/chat/booking/cancel` | POST | 예약 취소 |
-| `/api/chat/handoff` | POST | 1:1 멘토 상담 요청 |
-| `/api/curation/today` | GET | 오늘의 큐레이션 |
-| `/api/admin/curations` | CRUD | 큐레이션 관리 |
-| `/api/mentor/knowledge/*` | CRUD | 최신 자료 관리 |
-| `/api/mentor/basic/*` | CRUD | 기초 자료 관리 |
-| `/api/ta/slots` | GET | 조교 스케줄 전체 |
-| `/api/ta/schedule-assistant` | POST | 스케줄 챗봇 (자연어→일정) |
-| `/api/kakao/webhook` | POST | 카카오톡 채널 웹훅 |
+| 경로                         | 메서드 | 설명                               |
+| ---------------------------- | ------ | ---------------------------------- |
+| `/api/auth/login`            | POST   | 이메일/비밀번호 로그인             |
+| `/api/auth/login/kakao`      | POST   | 카카오 OAuth 로그인                |
+| `/api/chat`                  | POST   | 챗봇 메시지 (자동 에이전트 라우팅) |
+| `/api/chat/tips`             | POST   | 학습 팁 조회 (최신/기초)           |
+| `/api/chat/booking/dates`    | GET    | 예약 가능 날짜 목록                |
+| `/api/chat/booking/slots`    | GET    | 특정 날짜 시간대 목록              |
+| `/api/chat/booking/confirm`  | POST   | 예약 확정 + 브리핑 생성            |
+| `/api/chat/booking/my`       | GET    | 내 예약 목록                       |
+| `/api/chat/booking/cancel`   | POST   | 예약 취소                          |
+| `/api/chat/handoff`          | POST   | 1:1 멘토 상담 요청                 |
+| `/api/curation/today`        | GET    | 오늘의 큐레이션                    |
+| `/api/admin/curations`       | CRUD   | 큐레이션 관리                      |
+| `/api/mentor/knowledge/*`    | CRUD   | 최신 자료 관리                     |
+| `/api/mentor/basic/*`        | CRUD   | 기초 자료 관리                     |
+| `/api/ta/slots`              | GET    | 조교 스케줄 전체                   |
+| `/api/ta/schedule-assistant` | POST   | 스케줄 챗봇 (자연어→일정)          |
+| `/api/kakao/webhook`         | POST   | 카카오톡 채널 웹훅                 |
