@@ -7,6 +7,10 @@ import {
   AlertTriangle,
   Newspaper,
   LogOut,
+  UserCircle,
+  FileText,
+  ExternalLink,
+  Download,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -38,6 +42,57 @@ function CurationCard({ item }) {
       {item.summary && (
         <p className="text-xs text-slate-500 mt-1">{item.summary}</p>
       )}
+      {item.attachment_url && (
+        <a
+          href={item.attachment_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 mt-2 text-xs text-primary-600 hover:text-primary-800 font-medium"
+        >
+          <ExternalLink size={12} /> 원문 보기
+        </a>
+      )}
+    </div>
+  );
+}
+
+function MentorDocCard({ doc }) {
+  const isLink = doc.source_kind === "link";
+  return (
+    <div className="mt-2 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+      <div className="flex items-center gap-2 mb-1">
+        <FileText size={14} className="text-violet-500" />
+        <span className="text-xs text-violet-600 font-medium">멘토 자료</span>
+      </div>
+      <p className="text-sm text-slate-800 font-medium">
+        {doc.title || doc.digest_title}
+      </p>
+      {(doc.summary || doc.digest_summary) && (
+        <p className="text-xs text-slate-500 mt-1">
+          {doc.summary || doc.digest_summary}
+        </p>
+      )}
+      {doc.attachment_url && (
+        <div className="flex items-center gap-3 mt-2">
+          <a
+            href={doc.attachment_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium"
+          >
+            <ExternalLink size={12} /> {isLink ? "링크 열기" : "원문 보기"}
+          </a>
+          {!isLink && (
+            <a
+              href={doc.attachment_url}
+              download
+              className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium"
+            >
+              <Download size={12} /> 다운로드
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -59,7 +114,55 @@ function ChoiceButtons({ choices, onSelect }) {
   );
 }
 
-function ChatMessage({ msg, onSelect }) {
+function WelcomeActions({ onAction, disabled }) {
+  const actions = [
+    {
+      key: "curation",
+      label: "📋 오늘의 큐레이션",
+      desc: "학원 공지 · 뉴스 · 채용 · 공모전",
+      color:
+        "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300",
+    },
+    {
+      key: "ta",
+      label: "📅 조교 연결",
+      desc: "보충수업 예약 · 학습 질문",
+      color:
+        "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300",
+    },
+    {
+      key: "tips",
+      label: "📚 학습 팁",
+      desc: "담당 멘토 최신 자료",
+      color:
+        "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200 hover:border-violet-300",
+    },
+    {
+      key: "mentor",
+      label: "🤝 멘토 연결",
+      desc: "1:1 상담 요청",
+      color:
+        "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300",
+    },
+  ];
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      {actions.map((a) => (
+        <button
+          key={a.key}
+          onClick={() => onAction(a.key)}
+          disabled={disabled}
+          className={`flex flex-col items-start px-3 py-2.5 border rounded-xl text-left transition-colors disabled:opacity-40 ${a.color}`}
+        >
+          <span className="text-sm font-medium">{a.label}</span>
+          <span className="text-[11px] opacity-70 mt-0.5">{a.desc}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ChatMessage({ msg, onSelect, onQuickAction, sending }) {
   const isUser = msg.role === "user";
   const badge = AGENT_BADGES[msg.agent_type];
 
@@ -96,7 +199,16 @@ function ChatMessage({ msg, onSelect }) {
         {msg.curation_items?.map((item, i) => (
           <CurationCard key={i} item={item} />
         ))}
+        {msg.mentor_docs?.map((doc, i) => (
+          <MentorDocCard key={`md-${i}`} doc={doc} />
+        ))}
+        {msg.related_materials?.map((doc, i) => (
+          <MentorDocCard key={`rm-${i}`} doc={doc} />
+        ))}
         <ChoiceButtons choices={msg.choices} onSelect={onSelect} />
+        {msg.isWelcome && (
+          <WelcomeActions onAction={onQuickAction} disabled={sending} />
+        )}
         {msg.agent_type === "human_handoff" && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
             <AlertTriangle size={12} />
@@ -113,6 +225,7 @@ export default function StudentChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [handoffSending, setHandoffSending] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -127,11 +240,100 @@ export default function StudentChat() {
     setMessages([
       {
         role: "assistant",
-        content: `안녕하세요 ${user?.name || ""}님! 😊\n무엇이든 물어보세요.\n• 취업·채용 정보, IT 뉴스\n• 프로그래밍 학습 질문\n• 조교 보충수업 예약\n• 자격증·공모전 정보`,
+        content: `안녕하세요 ${user?.name || ""}님! 😊\n아래 메뉴를 선택하거나, 궁금한 점을 바로 입력해 주세요.`,
         agent_type: null,
+        isWelcome: true,
       },
     ]);
   }, [user]);
+
+  /* ── 퀵 액션: 오늘의 큐레이션 ── */
+  const fetchTodayCuration = async () => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: "📋 오늘의 큐레이션" },
+    ]);
+    try {
+      const res = await fetch("/api/curation/today");
+      const data = await res.json();
+      const items = data.items || [];
+      if (items.length === 0) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `오늘(${data.date}) 등록된 큐레이션이 아직 없습니다.\n관리자가 콘텐츠를 준비 중이에요!`,
+            agent_type: "agent_a",
+          },
+        ]);
+      } else {
+        const category = data.category || "공지";
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `📋 오늘의 큐레이션 [${category}]\n총 ${items.length}건의 콘텐츠가 있습니다.`,
+            agent_type: "agent_a",
+            curation_items: items,
+          },
+        ]);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "큐레이션 정보를 불러오지 못했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /* ── 퀵 액션: 학습 팁 ── */
+  const fetchLearningTips = async () => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [...prev, { role: "user", content: "📚 학습 팁" }]);
+    try {
+      const token = localStorage.getItem("edu_sync_token");
+      const res = await fetch("/api/chat/tips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: user?.id, token }),
+      });
+      const data = await res.json();
+      const docs = data.mentor_docs || [];
+      const text =
+        data.mentor_name && docs.length > 0
+          ? `📖 ${data.mentor_name} 멘토님의 최신 자료 (${docs.length}건)`
+          : "📖 아직 멘토님이 올린 자료가 없습니다.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: text,
+          agent_type: "agent_a",
+          mentor_docs: docs,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "학습 팁을 불러오지 못했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const send = async (text) => {
     const msg = text || input.trim();
@@ -156,6 +358,7 @@ export default function StudentChat() {
           agent_type: data.agent_type,
           choices: data.choices,
           curation_items: data.curation_items,
+          related_materials: data.related_materials,
           metadata: data.metadata,
         },
       ]);
@@ -172,6 +375,49 @@ export default function StudentChat() {
       setSending(false);
       inputRef.current?.focus();
     }
+  };
+
+  const requestMentorHandoff = async () => {
+    if (handoffSending) return;
+    setHandoffSending(true);
+    try {
+      const token = localStorage.getItem("edu_sync_token");
+      const res = await fetch("/api/chat/handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: user?.id, token }),
+      });
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            data.message ||
+            "멘토 상담이 접수되었습니다. 담당 멘토님이 곧 연락드리겠습니다.",
+          agent_type: "human_handoff",
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "멘토 연결 요청 중 오류가 발생했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setHandoffSending(false);
+    }
+  };
+
+  /* ── 웰컴 버튼 디스패처 ── */
+  const handleQuickAction = (key) => {
+    if (key === "curation") fetchTodayCuration();
+    else if (key === "ta") send("조교 보충수업 예약하고 싶어요");
+    else if (key === "tips") fetchLearningTips();
+    else if (key === "mentor") requestMentorHandoff();
   };
 
   return (
@@ -199,7 +445,13 @@ export default function StudentChat() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>
           {messages.map((msg, i) => (
-            <ChatMessage key={i} msg={msg} onSelect={(text) => send(text)} />
+            <ChatMessage
+              key={i}
+              msg={msg}
+              onSelect={(text) => send(text)}
+              onQuickAction={handleQuickAction}
+              sending={sending}
+            />
           ))}
         </AnimatePresence>
         {sending && (
@@ -227,14 +479,25 @@ export default function StudentChat() {
         )}
       </div>
 
-      {/* Input */}
-      <div className="shrink-0 p-3 bg-white border-t border-slate-200">
+      {/* Mentor connection + Input */}
+      <div className="shrink-0 bg-white border-t border-slate-200">
+        {/* Persistent mentor button */}
+        <div className="px-3 pt-2">
+          <button
+            onClick={requestMentorHandoff}
+            disabled={handoffSending}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <UserCircle size={16} />
+            {handoffSending ? "연결 중..." : "1:1 멘토 상담 연결"}
+          </button>
+        </div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             send();
           }}
-          className="flex gap-2"
+          className="flex gap-2 p-3"
         >
           <input
             ref={inputRef}

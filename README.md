@@ -474,6 +474,150 @@ https://your-domain.com/api/kakao/webhook/curation?category=자격증·공모전
 - 세션 및 임시 상태는 Redis 도입 권장
 - 첨부 파일 MIME 검사, 파일 크기 제한, 악성 파일 검사 추가 권장
 - 외부 링크 허용 도메인 정책과 redirect 검증 권장
+- 카카오 로그인은 데모 시연용. 실제 학원 운영 시 학원 자체 인증 시스템에 연동하는 구조
+
+---
+
+## 배포 가이드 (Render)
+
+> 아래는 Render (https://render.com) 기준 배포 절차입니다. 무료 플랜으로 시작 가능합니다.
+
+### 사전 준비
+
+1. GitHub 저장소가 **public** 상태인지 확인합니다
+2. `.env` 파일 내용은 절대 커밋하지 않습니다 (`.gitignore`에 포함됨)
+3. OpenAI API 키가 준비되어 있어야 합니다
+
+### Step 1: GitHub에 최신 코드 Push
+
+```powershell
+cd c:\Pyg\Projects\KIT\KIT-AI-Learning
+git add -A
+git commit -m "배포 준비 완료"
+git push origin main
+```
+
+### Step 2: Render 계정 생성 및 로그인
+
+1. https://render.com 에 접속합니다
+2. 우측 상단 **Get Started for Free** 클릭
+3. **GitHub** 버튼을 눌러 GitHub 계정으로 가입/로그인합니다
+
+### Step 3: 프론트엔드 빌드 (로컬)
+
+```powershell
+cd c:\Pyg\Projects\KIT\KIT-AI-Learning\frontend
+npm install
+npm run build
+```
+
+`frontend/dist/` 폴더가 생성됩니다. 이 빌드 결과물을 백엔드가 자동으로 서빙합니다.
+
+### Step 4: Render에서 Web Service 생성
+
+1. Render 대시보드에서 **New +** → **Web Service** 클릭
+2. **Build and deploy from a Git repository** 선택 → **Next**
+3. GitHub 저장소 목록에서 **KIT-AI-Learning** 선택 → **Connect**
+4. 아래와 같이 설정합니다
+
+| 항목               | 값                                             |
+| ------------------ | ---------------------------------------------- |
+| **Name**           | `edu-sync-ai` (원하는 이름)                    |
+| **Region**         | `Singapore` (한국에서 가장 가까움)             |
+| **Branch**         | `main`                                         |
+| **Root Directory** | `backend`                                      |
+| **Runtime**        | `Python 3`                                     |
+| **Build Command**  | `pip install -r requirements.txt`              |
+| **Start Command**  | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| **Instance Type**  | `Free` (시작) 또는 `Starter` (안정적)          |
+
+5. **Create Web Service** 클릭
+
+### Step 5: 환경변수 설정
+
+서비스 생성 후 좌측 메뉴에서 **Environment** 클릭 → **Add Environment Variable**:
+
+| Key                   | Value                                             |
+| --------------------- | ------------------------------------------------- |
+| `OPENAI_API_KEY`      | `sk-...` (본인 OpenAI 키)                         |
+| `OPENAI_MODEL`        | `gpt-4o-mini`                                     |
+| `LLM_PROVIDER`        | `openai`                                          |
+| `EMBEDDING_PROVIDER`  | `openai`                                          |
+| `SEED_DATA`           | `1` (데모 시드) 또는 `0` (빈 상태)                |
+| `CORS_ALLOW_ORIGINS`  | `https://edu-sync-ai.onrender.com`                |
+| `FRONTEND_URL`        | `https://edu-sync-ai.onrender.com`                |
+| `KAKAO_REST_API_KEY`  | 카카오 REST API 키                                |
+| `KAKAO_CLIENT_SECRET` | 카카오 클라이언트 시크릿                          |
+| `KAKAO_REDIRECT_URI`  | `https://edu-sync-ai.onrender.com/oauth/callback` |
+
+> ⚠️ `CORS_ALLOW_ORIGINS`와 `FRONTEND_URL`의 도메인은 Render가 배정한 실제 URL로 교체하세요.
+
+### Step 6: 디스크 연결 (선택 — 데이터 영속화)
+
+무료 플랜은 재배포 시 파일이 초기화됩니다. 데이터를 유지하려면:
+
+1. 서비스 설정 → **Disks** → **Add Disk**
+2. **Name**: `edu-sync-data`
+3. **Mount Path**: `/data`
+4. **Size**: 1 GB
+
+그리고 환경변수에 추가:
+
+| Key        | Value   |
+| ---------- | ------- |
+| `DATA_DIR` | `/data` |
+
+### Step 7: 배포 확인
+
+1. Render 대시보드에서 **Logs** 탭을 확인합니다
+2. `✅ 서버 준비 완료!` 로그가 보이면 성공
+3. 브라우저에서 `https://edu-sync-ai.onrender.com/api/health` 접속
+4. `{"status":"ok","service":"Edu-Sync AI v3",...}` 확인
+5. `https://edu-sync-ai.onrender.com/` 접속 → 웹 프론트엔드 확인
+
+### Step 8: 카카오 오픈빌더 스킬 URL 변경
+
+배포된 Render URL로 스킬 URL을 변경합니다:
+
+- 메인 AI: `https://edu-sync-ai.onrender.com/api/kakao/webhook`
+- 조교 예약: `https://edu-sync-ai.onrender.com/api/kakao/webhook/schedule`
+- 큐레이션: `https://edu-sync-ai.onrender.com/api/kakao/webhook/curation`
+
+> ngrok 대신 Render URL을 사용하면 24시간 상시 접속 가능합니다.
+
+### 프론트엔드 포함 단일 서버 구조
+
+현재 프로젝트는 **백엔드가 프론트엔드 빌드(`frontend/dist/`)를 직접 서빙**하는 구조입니다.
+
+```
+사용자 브라우저
+    ↓
+https://edu-sync-ai.onrender.com
+    ↓
+FastAPI (backend/main.py)
+    ├── /api/*  →  API 라우터 처리
+    └── /*      →  frontend/dist/index.html (SPA)
+```
+
+따라서 별도의 프론트엔드 서버가 필요 없습니다. `npm run build` 후 커밋하면 됩니다.
+
+---
+
+## 로컬 프로덕션 빌드 테스트
+
+배포 전 로컬에서 프로덕션 모드를 테스트할 수 있습니다:
+
+```powershell
+# 프론트엔드 빌드
+cd c:\Pyg\Projects\KIT\KIT-AI-Learning\frontend
+npm run build
+
+# 백엔드 실행 (dist/ 자동 감지)
+cd c:\Pyg\Projects\KIT\KIT-AI-Learning\backend
+uvicorn main:app --host 0.0.0.0 --port 8001
+```
+
+`http://localhost:8001` 에서 프론트엔드와 API가 함께 동작합니다.
 
 ## 점검 순서
 
@@ -514,14 +658,14 @@ https://your-domain.com/api/kakao/webhook/curation?category=자격증·공모전
 
 ---
 
-## 14. 현재 결론
+## 제출 체크리스트
 
-- AI 사용 중: 맞음
-- 멀티 에이전트 구조: 맞음
-- 벡터 저장소 연결: 맞음
-- 관리자/멘토/조교 대시보드 분리: 맞음
-- 드래그 업로드: 맞음
-- 카카오 연동 가능: 맞음
-- 카카오 쪽 수동 설정 필요: 맞음
-- 로컬 구동 가능: 맞음
-- 운영 배포 전 DB/인증 보강 필요: 맞음
+공모전 최종 제출 (2026.04.13 기한):
+
+- [ ] GitHub 저장소 **public** 설정
+- [ ] `.env` 파일이 커밋에 포함되지 않음 (API Key 노출 방지)
+- [ ] Render 배포 완료 및 라이브 URL 동작 확인
+- [ ] AI 리포트 PDF 작성 (양식: `docs/AI_REPORT_GUIDE.md` 참고)
+- [ ] 개인정보 수집/이용 동의서 서명 완료
+- [ ] 참가 각서 서명 완료
+- [ ] 기한 이후 커밋 없음 확인

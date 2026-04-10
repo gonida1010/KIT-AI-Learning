@@ -53,13 +53,13 @@ class OpenAIProvider(LLMProvider):
         logger.info(f"OpenAI 프로바이더 초기화: {model}")
 
     async def chat(self, system_prompt: str, user_message: str) -> str:
-        res = self.llm.invoke(
+        res = await self.llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
         )
         return res.content
 
     async def chat_json(self, system_prompt: str, user_message: str) -> dict:
-        res = self.llm.invoke(
+        res = await self.llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
         )
         return extract_json(res.content)
@@ -73,7 +73,7 @@ class OpenAIProvider(LLMProvider):
                 lc.append(HumanMessage(content=m["content"]))
             else:
                 lc.append(AIMessage(content=m["content"]))
-        res = self.llm.invoke(lc)
+        res = await self.llm.ainvoke(lc)
         return res.content
 
 
@@ -104,13 +104,13 @@ class OnPremiseProvider(LLMProvider):
         logger.info(f"OnPremise 프로바이더 초기화: {self.base_url}/{self.model}")
 
     async def chat(self, system_prompt: str, user_message: str) -> str:
-        res = self.llm.invoke(
+        res = await self.llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
         )
         return res.content
 
     async def chat_json(self, system_prompt: str, user_message: str) -> dict:
-        res = self.llm.invoke(
+        res = await self.llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
         )
         return extract_json(res.content)
@@ -124,7 +124,7 @@ class OnPremiseProvider(LLMProvider):
                 lc.append(HumanMessage(content=m["content"]))
             else:
                 lc.append(AIMessage(content=m["content"]))
-        res = self.llm.invoke(lc)
+        res = await self.llm.ainvoke(lc)
         return res.content
 
 

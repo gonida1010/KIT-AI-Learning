@@ -6,10 +6,12 @@ Edu-Sync AI — FastAPI 백엔드.
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from services.rag import load_or_build_vectorstore, build_curation_vectorstore, get_curation_vectorstore
 from services.llm_provider import create_llm_provider, LLMProvider
@@ -83,6 +85,21 @@ async def health():
         "vectorstore_loaded": vectorstore is not None,
         "llm_provider": type(llm_provider).__name__ if llm_provider else None,
     }
+
+
+# ── 프론트엔드 정적 파일 서빙 (프로덕션) ──────────────────
+STATIC_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if STATIC_DIR.is_dir():
+    from fastapi.responses import FileResponse
+
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":

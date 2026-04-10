@@ -7,6 +7,7 @@ import uuid
 import logging
 from datetime import datetime
 import re
+import traceback
 
 from fastapi import APIRouter, Request
 
@@ -14,6 +15,8 @@ from db.store import store
 
 router = APIRouter(prefix="/api/kakao", tags=["kakao"])
 logger = logging.getLogger(__name__)
+
+KAKAO_TEXT_LIMIT = 990  # simpleText 최대 1000자, 여유분 확보
 
 
 def _now():
@@ -25,8 +28,15 @@ def _uid():
 
 
 # ── SkillResponse 빌더 ──────────────────────────────────
+def _truncate(text: str, limit: int = KAKAO_TEXT_LIMIT) -> str:
+    """simpleText 1000자 제한 안전 보장."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
 def simple_text(text: str) -> dict:
-    return {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": text}}]}}
+    return {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": _truncate(text)}}]}}
 
 
 def text_with_quick_replies(text: str, choices: list[dict], show_handoff: bool = True) -> dict:
@@ -39,12 +49,22 @@ def text_with_quick_replies(text: str, choices: list[dict], show_handoff: bool =
         })
     if show_handoff:
         qr.append({"messageText": "멘토님과 직접 상담하기", "action": "message", "label": "🙋‍♂️ 멘토 상담 요청"})
-    return {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": text}}], "quickReplies": qr}}
+    # quickReplies 최대 10개
+    qr = qr[:10]
+    return {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": _truncate(text)}}], "quickReplies": qr}}
 
 
 # ── 메인 웹훅 ────────────────────────────────────────────
 @router.post("/webhook")
 async def kakao_webhook(request: Request):
+    try:
+        return await _kakao_webhook_inner(request)
+    except Exception as e:
+        logger.error(f"카카오 웹훅 처리 오류: {e}\n{traceback.format_exc()}")
+        return simple_text("죄송합니다, 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+
+
+async def _kakao_webhook_inner(request: Request):
     from main import retriever, llm_provider
     from services.agent_router import classify_intent
     from services.agent_a import handle_agent_a
@@ -240,58 +260,79 @@ async def kakao_webhook(request: Request):
 # ── 조교 예약 전용 블록 ──────────────────────────────────
 @router.post("/webhook/schedule")
 async def kakao_schedule_webhook(request: Request):
-    body = await request.json()
-    available = store.get_available_slots()
-    if not available:
-        return simple_text("현재 예약 가능한 조교 시간이 없습니다.")
-    lines = ["📅 예약 가능한 보충 수업 시간:\n"]
-    for i, slot in enumerate(available[:5], 1):
-        lines.append(f"{i}. {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}")
-    lines.append('\n원하는 시간을 아래 버튼으로 누른 뒤, 어려운 내용을 한 줄로 보내주세요.')
-    return text_with_quick_replies(
-        "\n".join(lines),
-        [
-            {"label": f"{slot['date']} {slot['start_time']}", "messageText": f"예약:{slot['id']}"}
-            for slot in available[:5]
-        ],
-        show_handoff=True,
-    )
+    try:
+        body = await request.json()
+        available = store.get_available_slots()
+        if not available:
+            return simple_text("현재 예약 가능한 조교 시간이 없습니다.")
+        lines = ["📅 예약 가능한 보충 수업 시간:\n"]
+        for i, slot in enumerate(available[:5], 1):
+            lines.append(f"{i}. {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}")
+        lines.append('\n원하는 시간을 아래 버튼으로 누른 뒤, 어려운 내용을 한 줄로 보내주세요.')
+        return text_with_quick_replies(
+            "\n".join(lines),
+            [
+                {"label": f"{slot['date']} {slot['start_time']}", "messageText": f"예약:{slot['id']}"}
+                for slot in available[:5]
+            ],
+            show_handoff=True,
+        )
+    except Exception as e:
+        logger.error(f"스케줄 웹훅 오류: {e}\n{traceback.format_exc()}")
+        return simple_text("죄송합니다, 예약 정보를 불러오는 중 오류가 발생했습니다.")
 
 
 # ── 큐레이션 조회 전용 블록 ──────────────────────────────
 @router.post("/webhook/curation")
-async def kakao_curation_webhook(request: Request, category: str = ""):
+async def kakao_curation_webhook(request: Request):
     """카테고리별 큐레이션 정보 제공."""
+    try:
+        body = await request.json()
+
+        # 카카오 스킬 파라미터는 body > action > params 에 들어옴
+        action_params = body.get("action", {}).get("params", {})
+        category = action_params.get("category", "")
+
+        categories = [c.strip() for c in category.split(",") if c.strip()] if category else []
+
+        if categories:
+            items = []
+            for cat in categories:
+                items.extend(store.get_curations(category=cat))
+        else:
+            items = store.curation_items
+
+        # 최신 5개만
+        items = sorted(items, key=lambda x: x.get("date", ""), reverse=True)[:5]
+
+        if not items:
+            return simple_text("해당 카테고리의 정보가 아직 없습니다.")
+
+        lines = []
+        for item in items:
+            lines.append(f"📌 [{item['category']}] {item['title']}")
+            lines.append(f"   {item['summary']}")
+            lines.append(f"   📅 {item['date']}")
+            lines.append("")
+
+        return text_with_quick_replies(
+            "\n".join(lines),
+            [
+                {"label": "📋 채용정보 더보기"},
+                {"label": "📰 IT뉴스 더보기"},
+                {"label": "🏆 자격증·공모전"},
+            ],
+            show_handoff=True,
+        )
+    except Exception as e:
+        logger.error(f"큐레이션 웹훅 오류: {e}\n{traceback.format_exc()}")
+        return simple_text("죄송합니다, 큐레이션 정보를 불러오는 중 오류가 발생했습니다.")
+
+
+# ── 연결 테스트용 엔드포인트 ─────────────────────────────
+@router.post("/webhook/test")
+async def kakao_test_webhook(request: Request):
+    """스킬 연결 확인용 — 즉시 응답."""
     body = await request.json()
-
-    categories = [c.strip() for c in category.split(",") if c.strip()] if category else []
-
-    if categories:
-        items = []
-        for cat in categories:
-            items.extend(store.get_curations(category=cat))
-    else:
-        items = store.curation_items
-
-    # 최신 5개만
-    items = sorted(items, key=lambda x: x.get("date", ""), reverse=True)[:5]
-
-    if not items:
-        return simple_text("해당 카테고리의 정보가 아직 없습니다.")
-
-    lines = []
-    for item in items:
-        lines.append(f"📌 [{item['category']}] {item['title']}")
-        lines.append(f"   {item['summary']}")
-        lines.append(f"   📅 {item['date']}")
-        lines.append("")
-
-    return text_with_quick_replies(
-        "\n".join(lines),
-        [
-            {"label": "📋 채용정보 더보기"},
-            {"label": "📰 IT뉴스 더보기"},
-            {"label": "🏆 자격증·공모전"},
-        ],
-        show_handoff=True,
-    )
+    utterance = body.get("userRequest", {}).get("utterance", "")
+    return simple_text(f"✅ 스킬 서버 연결 성공!\n발화: {utterance}")

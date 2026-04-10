@@ -8,15 +8,18 @@ __pycache__/
 .env
 !.env.example
 
-# Vector stores (auto-generated from PDF)
+# Vector stores (auto-generated — rebuilt on startup)
 vectorstore/
 vectorstore_curation/
+vectorstore_mentor/
 
-# Build output
-frontend/dist/
+# Build output (keep dist/ for single-server deploy)
+# frontend/dist/
 
 # Data (PDF files - large binaries)
 backend/data/*.pdf
+backend/data/curation_assets/
+backend/data/mentor_assets/
 
 # DB runtime
 backend/db/*.json

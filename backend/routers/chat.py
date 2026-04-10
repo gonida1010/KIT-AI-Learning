@@ -144,6 +144,50 @@ async def chat_history(student_id: str):
     return store.get_conversation(student_id)
 
 
+class TipsRequest(BaseModel):
+    student_id: str | None = None
+    token: str | None = None
+
+
+@router.post("/tips")
+async def learning_tips(req: TipsRequest):
+    """학생의 담당 멘토가 올린 최신 자료 반환."""
+    sid = req.student_id
+    if not sid and req.token:
+        sid = store.get_session(req.token)
+    if not sid:
+        sid = "student_001"
+
+    student = store.get_user(sid)
+    mentor_id = student.get("mentor_id") if student else None
+
+    mentor_docs = []
+    mentor_name = ""
+    if mentor_id:
+        mentor = store.get_user(mentor_id)
+        mentor_name = mentor.get("name", "") if mentor else ""
+        raw_docs = store.get_mentor_docs(mentor_id)[:5]
+        for d in raw_docs:
+            source_kind = d.get("source_kind", "file")
+            if source_kind == "link":
+                attachment_url = d.get("source_url", "")
+            else:
+                attachment_url = f"/api/mentor/knowledge/assets/{d['id']}"
+            mentor_docs.append({
+                "id": d.get("id"),
+                "title": d.get("digest_title") or d.get("filename", ""),
+                "summary": d.get("digest_summary", ""),
+                "uploaded_at": d.get("uploaded_at", ""),
+                "attachment_url": attachment_url,
+                "source_kind": source_kind,
+            })
+
+    return {
+        "mentor_name": mentor_name,
+        "mentor_docs": mentor_docs,
+    }
+
+
 @router.post("/handoff")
 async def request_handoff(req: HandoffWebRequest):
     student = store.get_user(req.student_id)

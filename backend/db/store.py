@@ -4,12 +4,16 @@ In-memory 데이터 저장소 + JSON 파일 영속성.
 """
 
 import json
+import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_FILE = BASE_DIR / "app_data.json"
+# 프로덕션 배포 시 /data 디스크 마운트 사용 (Render 등), 없으면 로컬 디렉터리
+_PERSIST_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR)))
+_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+DATA_FILE = _PERSIST_DIR / "app_data.json"
 
 
 def _now() -> str:
@@ -65,7 +69,9 @@ class Store:
                     return
             except Exception:
                 pass
-        self._seed()
+        # 프로덕션에서는 시드 없이 빈 상태로 시작 (SEED_DATA=1 로 활성화)
+        if os.getenv("SEED_DATA", "1") == "1":
+            self._seed()
 
     def _save(self):
         DATA_FILE.write_text(
@@ -747,10 +753,15 @@ class Store:
 
     # ━━━━━━━━━━━━━━━━━━━━ TA Schedules ━━━━━━━━━━━━━━━━━━━
     def get_available_slots(self) -> list[dict]:
+        today = datetime.now().strftime("%Y-%m-%d")
+        max_date = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
         return [
             s
             for s in self.schedules
-            if s.get("slot_type", "available") == "available" and s["is_available"]
+            if s.get("slot_type", "available") == "available"
+            and s["is_available"]
+            and s.get("date", "") >= today
+            and s.get("date", "") <= max_date
         ]
 
     def get_all_slots(self) -> list[dict]:
