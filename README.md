@@ -139,18 +139,18 @@ KIT-AI-Learning/
 
 ## 환경 변수
 
-| 변수명                | 설명                         |
-| --------------------- | ---------------------------- |
-| `OPENAI_API_KEY`      | OpenAI API 키                |
-| `OPENAI_MODEL`        | 사용 모델 (예:`gpt-4o-mini`) |
-| `LLM_PROVIDER`        | LLM 공급자 (`openai`)        |
-| `EMBEDDING_PROVIDER`  | 임베딩 공급자 (`openai`)     |
-| `DATABASE_URL`        | PostgreSQL 접속 URL          |
-| `KAKAO_REST_API_KEY`  | 카카오 REST API 키           |
-| `KAKAO_CLIENT_SECRET` | 카카오 Client Secret         |
-| `KAKAO_REDIRECT_URI`  | 카카오 OAuth 리다이렉트 URI  |
-| `FRONTEND_URL`        | 프론트엔드 URL               |
-| `CORS_ALLOW_ORIGINS`  | CORS 허용 오리진             |
+| 변수명                | 설명                                     |
+| --------------------- | ---------------------------------------- |
+| `OPENAI_API_KEY`      | OpenAI API 키                            |
+| `OPENAI_MODEL`        | 사용 모델 (예:`gpt-5.4-mini-2026-03-17`) |
+| `LLM_PROVIDER`        | LLM 공급자 (`openai`)                    |
+| `EMBEDDING_PROVIDER`  | 임베딩 공급자 (`openai`)                 |
+| `DATABASE_URL`        | PostgreSQL 접속 URL                      |
+| `KAKAO_REST_API_KEY`  | 카카오 REST API 키                       |
+| `KAKAO_CLIENT_SECRET` | 카카오 Client Secret                     |
+| `KAKAO_REDIRECT_URI`  | 카카오 OAuth 리다이렉트 URI              |
+| `FRONTEND_URL`        | 프론트엔드 URL                           |
+| `CORS_ALLOW_ORIGINS`  | CORS 허용 오리진                         |
 
 ---
 

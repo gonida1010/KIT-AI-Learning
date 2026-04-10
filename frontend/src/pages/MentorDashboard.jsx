@@ -58,9 +58,7 @@ function ActivityItem({ item }) {
       <p className="break-words text-sm font-semibold leading-6 text-slate-800">
         {item.question || "질문 기록 없음"} - {item.student_name}
       </p>
-      <p className="mt-1 text-xs text-slate-400">
-        {ts}
-      </p>
+      <p className="mt-1 text-xs text-slate-400">{ts}</p>
       <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
         <p className="text-[11px] font-medium text-slate-500">송부 자료</p>
         {item.sent_materials?.length ? (
