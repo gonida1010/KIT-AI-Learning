@@ -288,6 +288,60 @@ async def booking_confirm(req: BookingConfirmRequest):
     }
 
 
+class BookingCancelRequest(BaseModel):
+    slot_id: str
+    token: str | None = None
+    student_id: str | None = None
+
+
+@router.get("/booking/my")
+async def my_bookings(token: str = "", student_id: str = ""):
+    """학생 본인의 예약 목록 반환."""
+    sid = student_id
+    if not sid and token:
+        sid = store.get_session(token)
+    if not sid:
+        return []
+    slots = store.get_booked_slots_by_student(sid)
+    return [
+        {
+            "id": s["id"],
+            "date": s.get("date", ""),
+            "start_time": s.get("start_time", ""),
+            "end_time": s.get("end_time", ""),
+            "ta_name": s.get("ta_name", ""),
+            "booking_description": s.get("booking_description", ""),
+        }
+        for s in slots
+    ]
+
+
+@router.post("/booking/cancel")
+async def booking_cancel(req: BookingCancelRequest):
+    """웹 채팅에서 예약 취소."""
+    sid = req.student_id
+    if not sid and req.token:
+        sid = store.get_session(req.token)
+    if not sid:
+        return {"status": "error", "message": "로그인이 필요합니다."}
+
+    slot = store.cancel_booking(req.slot_id, sid)
+    if not slot:
+        return {"status": "error", "message": "취소할 수 없는 예약입니다."}
+
+    store.add_event(sid, {
+        "timestamp": _now(), "event_type": "booking_cancel",
+        "content": f"조교 보충수업 취소 ({slot.get('ta_name', '')})",
+        "detail": f"{slot.get('date', '')} {slot.get('start_time', '')}~{slot.get('end_time', '')}",
+    })
+
+    return {
+        "status": "ok",
+        "message": f"❌ {slot.get('date', '')} {slot.get('start_time', '')}~{slot.get('end_time', '')} "
+                   f"({slot.get('ta_name', '')}) 예약이 취소되었습니다.",
+    }
+
+
 @router.post("/handoff")
 async def request_handoff(req: HandoffWebRequest):
     student = store.get_user(req.student_id)

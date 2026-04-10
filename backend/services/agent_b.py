@@ -5,7 +5,6 @@ Agent B — 조교 스케줄러 & 통역기.
 
 import logging
 import re
-from datetime import datetime
 
 from services.llm_provider import LLMProvider
 from db.store import store
@@ -100,9 +99,7 @@ def _slots_text() -> str:
     return "\n".join(lines)
 
 
-_BOOKING_KEYWORDS = ["예약", "보충수업", "보충 수업", "조교 연결", "조교 예약", "시간대"]
-
-WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
+_BOOKING_KEYWORDS = ["예약", "보충수업", "보충 수업", "조교 연결", "조교 예약", "시간대", "취소"]
 
 
 async def handle_agent_b(
@@ -110,34 +107,15 @@ async def handle_agent_b(
     llm: LLMProvider,
     user_id: str | None = None,
 ) -> dict:
-    # ── 예약 요청 감지 → 날짜 선택지 먼저 반환 ──
+    # ── 예약 요청 감지 → 예약/취소 선택지 먼저 반환 ──
     is_booking = any(kw in message for kw in _BOOKING_KEYWORDS)
     if is_booking:
-        slots = store.get_available_slots()
-        if not slots:
-            return {
-                "content": "현재 예약 가능한 시간이 없습니다.\n조교 선생님이 일정을 등록하면 안내해 드릴게요.",
-                "choices": [],
-                "needs_handoff": False,
-                "suggest_booking": False,
-            }
-        # 날짜별 그룹핑
-        date_map: dict[str, int] = {}
-        for s in slots:
-            d = s["date"]
-            date_map[d] = date_map.get(d, 0) + 1
-        choices = []
-        for d in sorted(date_map):
-            wd = WEEKDAY_KR[datetime.strptime(d, "%Y-%m-%d").weekday()]
-            choices.append({
-                "label": f"{d} ({wd})",
-                "description": f"{date_map[d]}개 시간대 가능",
-                "_action": "pick_date",
-                "_date": d,
-            })
         return {
-            "content": "조교 보충수업 예약을 도와드리겠습니다.\n원하시는 날짜를 선택해 주세요.",
-            "choices": choices,
+            "content": "조교 보충수업을 도와드리겠습니다.\n원하시는 메뉴를 선택해 주세요.",
+            "choices": [
+                {"label": "예약하기", "description": "조교 보충수업 새로 예약", "_action": "booking_new"},
+                {"label": "취소하기", "description": "기존 예약 취소", "_action": "booking_cancel"},
+            ],
             "needs_handoff": False,
             "suggest_booking": True,
         }

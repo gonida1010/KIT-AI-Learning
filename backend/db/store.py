@@ -283,6 +283,32 @@ class Store:
             )
             return [_row_to_dict(r) for r in rows]
 
+    def get_booked_slots_by_student(self, student_id: str) -> list[dict]:
+        with self._session() as db:
+            rows = (
+                db.query(Schedule)
+                .filter(Schedule.booked_by == student_id)
+                .order_by(Schedule.date, Schedule.start_time)
+                .all()
+            )
+            return [_row_to_dict(r) for r in rows]
+
+    def cancel_booking(self, slot_id: str, student_id: str) -> dict | None:
+        with self._session() as db:
+            row = db.get(Schedule, slot_id)
+            if not row or row.booked_by != student_id:
+                return None
+            row.is_available = True
+            row.booked_by = None
+            row.booked_by_name = None
+            row.booking_phone = None
+            row.booking_description = None
+            row.booking_summary = None
+            row.briefing_report = None
+            db.commit()
+            db.refresh(row)
+            return _row_to_dict(row)
+
     def add_ta_slot(self, slot: dict):
         with self._session() as db:
             db.merge(Schedule(**{k: v for k, v in slot.items() if hasattr(Schedule, k)}))

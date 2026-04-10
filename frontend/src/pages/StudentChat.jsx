@@ -472,11 +472,27 @@ export default function StudentChat() {
     }
   };
 
-  /* ── 조교 예약 플로우: 날짜 선택 → 시간 선택 → 확정 ── */
-  const startBookingFlow = async () => {
+  /* ── 조교 예약 플로우: 예약/취소 선택 → 날짜 → 시간 → 확정 ── */
+  const startBookingFlow = () => {
+    if (sending) return;
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: "조교 연결" },
+      {
+        role: "assistant",
+        content: "원하시는 메뉴를 선택해 주세요.",
+        agent_type: "agent_b",
+        choices: [
+          { label: "예약하기", description: "조교 보충수업 새로 예약", _action: "booking_new" },
+          { label: "취소하기", description: "기존 예약 취소", _action: "booking_cancel" },
+        ],
+      },
+    ]);
+  };
+
+  const fetchBookingDates = async () => {
     if (sending) return;
     setSending(true);
-    setMessages((prev) => [...prev, { role: "user", content: "조교 연결" }]);
     try {
       const res = await fetch("/api/chat/booking/dates");
       const dates = await res.json();
@@ -520,6 +536,89 @@ export default function StudentChat() {
         {
           role: "assistant",
           content: "예약 정보를 불러오지 못했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const startCancelFlow = async () => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const token = localStorage.getItem("edu_sync_token");
+      const res = await fetch(
+        `/api/chat/booking/my?token=${encodeURIComponent(token || "")}&student_id=${encodeURIComponent(user?.id || "")}`
+      );
+      const slots = await res.json();
+      if (!slots.length) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "현재 예약된 보충수업이 없습니다.",
+            agent_type: "agent_b",
+          },
+        ]);
+        return;
+      }
+      const choices = slots.map((s) => ({
+        label: `${s.date} ${s.start_time}~${s.end_time} (${s.ta_name})`,
+        description: s.booking_description || "",
+        _action: "cancel_slot",
+        _slotId: s.id,
+      }));
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "취소할 예약을 선택해 주세요.",
+          agent_type: "agent_b",
+          choices,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "예약 목록을 불러오지 못했습니다. 다시 시도해 주세요.",
+          agent_type: null,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const cancelBooking = async (slotId, label) => {
+    if (sending) return;
+    setSending(true);
+    setMessages((prev) => [...prev, { role: "user", content: label }]);
+    try {
+      const token = localStorage.getItem("edu_sync_token");
+      const res = await fetch("/api/chat/booking/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot_id: slotId, token, student_id: user?.id }),
+      });
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.message || "예약이 취소되었습니다.",
+          agent_type: "agent_b",
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "예약 취소 중 오류가 발생했습니다. 다시 시도해 주세요.",
           agent_type: null,
         },
       ]);
@@ -673,7 +772,15 @@ export default function StudentChat() {
               key={i}
               msg={msg}
               onSelect={(text, choiceData) => {
-                if (choiceData?._action === "pick_date") {
+                if (choiceData?._action === "booking_new") {
+                  setMessages((prev) => [...prev, { role: "user", content: text }]);
+                  fetchBookingDates();
+                } else if (choiceData?._action === "booking_cancel") {
+                  setMessages((prev) => [...prev, { role: "user", content: text }]);
+                  startCancelFlow();
+                } else if (choiceData?._action === "cancel_slot") {
+                  cancelBooking(choiceData._slotId, text);
+                } else if (choiceData?._action === "pick_date") {
                   pickBookingDate(choiceData._date);
                 } else if (choiceData?._action === "pick_slot") {
                   confirmBookingSlot(choiceData._slotId, text);
