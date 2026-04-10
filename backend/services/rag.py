@@ -255,8 +255,18 @@ def add_mentor_document_to_vectorstore(mentor_id: str, documents: list[Document]
 
 def rebuild_mentor_vectorstore(mentor_id: str, documents: list[Document]):
     if not documents:
+        clear_mentor_vectorstore(mentor_id)
         return None
     return build_mentor_vectorstore(mentor_id, documents)
+
+
+def clear_mentor_vectorstore(mentor_id: str):
+    """멘토 벡터스토어 완전 삭제."""
+    import shutil
+    d = _mentor_vectorstore_dir(mentor_id)
+    if d.exists():
+        shutil.rmtree(d)
+    _mentor_vs_map.pop(mentor_id, None)
 
 
 def search_mentor_vectorstore(mentor_id: str, query: str, k: int = 3) -> list[dict]:
@@ -329,6 +339,22 @@ def add_mentor_basic_document_to_vectorstore(mentor_id: str, documents: list[Doc
     vs.save_local(str(_mentor_basic_vectorstore_dir(mentor_id)))
     _mentor_basic_vs_map[mentor_id] = vs
     return vs
+
+
+def rebuild_mentor_basic_vectorstore(mentor_id: str, documents: list[Document]):
+    if not documents:
+        clear_mentor_basic_vectorstore(mentor_id)
+        return None
+    return build_mentor_basic_vectorstore(mentor_id, documents)
+
+
+def clear_mentor_basic_vectorstore(mentor_id: str):
+    """멘토 기초 벡터스토어 완전 삭제."""
+    import shutil
+    d = _mentor_basic_vectorstore_dir(mentor_id)
+    if d.exists():
+        shutil.rmtree(d)
+    _mentor_basic_vs_map.pop(mentor_id, None)
 
 
 def search_mentor_basic_vectorstore(mentor_id: str, query: str, k: int = 3) -> list[dict]:

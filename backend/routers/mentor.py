@@ -13,7 +13,13 @@ from langchain.schema import Document
 
 from db.store import store
 from models.schemas import StudentProfile, TimelineEvent
-from services.rag import DATA_DIR, add_mentor_document_to_vectorstore, add_mentor_basic_document_to_vectorstore
+from services.rag import (
+    DATA_DIR,
+    add_mentor_document_to_vectorstore,
+    add_mentor_basic_document_to_vectorstore,
+    rebuild_mentor_vectorstore,
+    rebuild_mentor_basic_vectorstore,
+)
 
 router = APIRouter(prefix="/api/mentor", tags=["mentor"])
 MENTOR_ASSET_DIR = DATA_DIR / "mentor_assets"
@@ -248,6 +254,23 @@ async def delete_mentor_knowledge(doc_id: str, token: str = ""):
         asset_path = MENTOR_ASSET_DIR / mentor["id"] / source_filename
         if asset_path.exists():
             asset_path.unlink()
+
+    # 벡터스토어 재빌드 (남은 문서 기준)
+    remaining = store.get_mentor_docs(mentor["id"])
+    if remaining:
+        from langchain.schema import Document as LCDoc
+        docs = [
+            LCDoc(
+                page_content=f"제목: {d.get('digest_title', '')}"
+                             f"\n요약: {d.get('digest_summary', '')}",
+                metadata={"mentor_doc_id": d["id"], "digest_title": d.get("digest_title", ""), "filename": d.get("filename", "")},
+            )
+            for d in remaining
+        ]
+        rebuild_mentor_vectorstore(mentor["id"], docs)
+    else:
+        rebuild_mentor_vectorstore(mentor["id"], [])
+
     return {"status": "ok"}
 
 
@@ -380,6 +403,23 @@ async def delete_mentor_basic(doc_id: str, token: str = ""):
         asset_path = MENTOR_BASIC_ASSET_DIR / mentor["id"] / source_filename
         if asset_path.exists():
             asset_path.unlink()
+
+    # 벡터스토어 재빌드
+    remaining = store.get_mentor_basic_docs(mentor["id"])
+    if remaining:
+        from langchain.schema import Document as LCDoc
+        docs = [
+            LCDoc(
+                page_content=f"제목: {d.get('digest_title', '')}"
+                             f"\n요약: {d.get('digest_summary', '')}",
+                metadata={"mentor_basic_doc_id": d["id"], "digest_title": d.get("digest_title", ""), "filename": d.get("filename", "")},
+            )
+            for d in remaining
+        ]
+        rebuild_mentor_basic_vectorstore(mentor["id"], docs)
+    else:
+        rebuild_mentor_basic_vectorstore(mentor["id"], [])
+
     return {"status": "ok"}
 
 

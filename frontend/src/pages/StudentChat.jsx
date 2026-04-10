@@ -483,8 +483,16 @@ export default function StudentChat() {
         content: "원하시는 메뉴를 선택해 주세요.",
         agent_type: "agent_b",
         choices: [
-          { label: "예약하기", description: "조교 보충수업 새로 예약", _action: "booking_new" },
-          { label: "취소하기", description: "기존 예약 취소", _action: "booking_cancel" },
+          {
+            label: "예약하기",
+            description: "조교 보충수업 새로 예약",
+            _action: "booking_new",
+          },
+          {
+            label: "취소하기",
+            description: "기존 예약 취소",
+            _action: "booking_cancel",
+          },
         ],
       },
     ]);
@@ -550,7 +558,7 @@ export default function StudentChat() {
     try {
       const token = localStorage.getItem("edu_sync_token");
       const res = await fetch(
-        `/api/chat/booking/my?token=${encodeURIComponent(token || "")}&student_id=${encodeURIComponent(user?.id || "")}`
+        `/api/chat/booking/my?token=${encodeURIComponent(token || "")}&student_id=${encodeURIComponent(user?.id || "")}`,
       );
       const slots = await res.json();
       if (!slots.length) {
@@ -773,10 +781,16 @@ export default function StudentChat() {
               msg={msg}
               onSelect={(text, choiceData) => {
                 if (choiceData?._action === "booking_new") {
-                  setMessages((prev) => [...prev, { role: "user", content: text }]);
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: "user", content: text },
+                  ]);
                   fetchBookingDates();
                 } else if (choiceData?._action === "booking_cancel") {
-                  setMessages((prev) => [...prev, { role: "user", content: text }]);
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: "user", content: text },
+                  ]);
                   startCancelFlow();
                 } else if (choiceData?._action === "cancel_slot") {
                   cancelBooking(choiceData._slotId, text);
