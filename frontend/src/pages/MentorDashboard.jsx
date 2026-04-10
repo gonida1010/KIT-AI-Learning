@@ -234,7 +234,7 @@ export default function MentorDashboard() {
     const token = localStorage.getItem("edu_sync_token");
     const res = await fetch(
       `/api/mentor/knowledge/${docId}?token=${encodeURIComponent(token || "")}`,
-      { method: "DELETE" }
+      { method: "DELETE" },
     ).catch(() => null);
     if (!res?.ok) {
       setError("자료 삭제에 실패했습니다.");
@@ -247,7 +247,7 @@ export default function MentorDashboard() {
     const token = localStorage.getItem("edu_sync_token");
     const res = await fetch(
       `/api/mentor/basic/${docId}?token=${encodeURIComponent(token || "")}`,
-      { method: "DELETE" }
+      { method: "DELETE" },
     ).catch(() => null);
     if (!res?.ok) {
       setError("기초 자료 삭제에 실패했습니다.");
@@ -385,7 +385,11 @@ export default function MentorDashboard() {
             <div className="space-y-3">
               {recentBasicDocs.length ? (
                 recentBasicDocs.map((doc) => (
-                  <RecentDocItem key={doc.id} doc={doc} onDelete={deleteBasicDoc} />
+                  <RecentDocItem
+                    key={doc.id}
+                    doc={doc}
+                    onDelete={deleteBasicDoc}
+                  />
                 ))
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-400">
