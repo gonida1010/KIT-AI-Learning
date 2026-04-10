@@ -1,0 +1,251 @@
+# 시스템 아키텍처 설계서
+
+> Edu-Sync AI 기술 구조 및 데이터 흐름 문서
+
+---
+
+## 1. 기술 스택
+
+### Backend
+
+| 기술 | 버전 | 용도 |
+| ---- | ---- | ---- |
+| **FastAPI** | Python 3.11+ | REST API 서버, SPA 정적 서빙 |
+| **LangChain** | — | LLM 비동기 호출, RAG 체인 구성 |
+| **OpenAI GPT-4o-mini** | — | 챗봇 응답, 문서 요약, 의도 분류 |
+| **FAISS** | faiss-cpu | 벡터 검색 엔진 (RAG) |
+| **SQLAlchemy 2.0** | — | ORM, 데이터베이스 추상화 |
+| **PostgreSQL** | — | 주 데이터베이스 (Render 호스팅) |
+| **pypdf** | — | PDF 문서 텍스트 추출 |
+
+### Frontend
+
+| 기술 | 버전 | 용도 |
+| ---- | ---- | ---- |
+| **React** | 19 | SPA 프레임워크 |
+| **Vite** | — | 빌드 도구, HMR 개발 서버 |
+| **Tailwind CSS** | 4 | 유틸리티 기반 스타일링 |
+| **Lucide React** | — | 아이콘 시스템 |
+| **Framer Motion** | — | UI 애니메이션 |
+
+### 인프라
+
+| 기술 | 용도 |
+| ---- | ---- |
+| **Render** | 웹 서비스 + PostgreSQL 호스팅, GitHub 자동 배포 |
+| **카카오 OAuth 2.0** | 카카오 로그인 연동 |
+| **세션 토큰** | 웹 인증 관리 |
+
+---
+
+## 2. 시스템 아키텍처
+
+```
+┌─────────────────────────────────────────────────┐
+│                    클라이언트                     │
+│  ┌──────────────┐    ┌───────────────────────┐  │
+│  │ 웹 브라우저   │    │ 카카오톡 채널          │  │
+│  │ (React SPA)  │    │ (Webhook)             │  │
+│  └──────┬───────┘    └───────────┬───────────┘  │
+└─────────┼────────────────────────┼──────────────┘
+          │ HTTPS                  │ HTTPS
+          ▼                        ▼
+┌─────────────────────────────────────────────────┐
+│              FastAPI 서버 (Render)                │
+│                                                  │
+│  ┌─────────────────────────────────────────┐    │
+│  │              API 라우터                   │    │
+│  │  auth / chat / mentor / ta / admin /    │    │
+│  │  curation / knowledge / kakao           │    │
+│  └─────────────────┬───────────────────────┘    │
+│                    │                             │
+│  ┌─────────────────▼───────────────────────┐    │
+│  │           서비스 레이어                    │    │
+│  │  agent_router → agent_a / agent_b       │    │
+│  │  llm_provider / rag                     │    │
+│  └──────┬──────────────────┬───────────────┘    │
+│         │                  │                     │
+│  ┌──────▼──────┐  ┌───────▼────────────┐       │
+│  │  PostgreSQL │  │  FAISS 벡터스토어    │       │
+│  │  (Render)   │  │  - knowledge        │       │
+│  │             │  │  - curation         │       │
+│  │  12 테이블  │  │  - mentor/{id}      │       │
+│  └─────────────┘  │  - mentor_basic/{id}│       │
+│                    └────────────────────┘       │
+└─────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  OpenAI API          │
+│  (GPT-4o-mini)       │
+└─────────────────────┘
+```
+
+---
+
+## 3. 데이터 흐름
+
+### 3-1. 챗봇 메시지 처리 흐름
+
+```
+1. 학생이 메시지 입력 (웹 또는 카카오톡)
+2. POST /api/chat (또는 POST /api/kakao/webhook)
+3. agent_router.py: Router AI가 의도 분류
+   → "admin" | "career" | "curation" | "study" | "booking" | "handoff"
+4-A. Agent A (행정/커리어/큐레이션):
+     → FAISS 벡터 검색 (knowledge / curation / mentor)
+     → 검색 결과 + 프롬프트 → GPT-4o-mini
+     → JSON 응답 생성 (답변 텍스트 + 자료 카드)
+4-B. Agent B (학습/예약):
+     → 예약 키워드 감지 시 예약 플로우 시작
+     → 학습 질문 시 RAG 검색 + 답변 생성
+5. 응답을 프론트엔드에 반환
+6. 대화 이력을 PostgreSQL에 저장
+```
+
+### 3-2. 조교 예약 플로우
+
+```
+1. 학생: "보충수업 예약하고 싶어"
+2. Agent B: 예약하기 / 취소하기 선택 메뉴 표시
+3. [예약하기 선택 시]
+   → GET /api/chat/booking/dates → 예약 가능 날짜 목록
+   → 학생이 날짜 클릭
+   → GET /api/chat/booking/slots?date=YYYY-MM-DD → 시간대 목록
+   → 학생이 시간 클릭
+   → 학생이 필요 내용 텍스트 입력
+   → POST /api/chat/booking/confirm → 예약 확정
+   → AI가 학생 이력 분석 → 브리핑 리포트 자동 생성
+4. [취소하기 선택 시]
+   → GET /api/chat/booking/my → 내 예약 목록
+   → 학생이 취소할 예약 선택
+   → POST /api/chat/booking/cancel → 예약 취소
+```
+
+### 3-3. 멘토 자료 업로드 흐름
+
+```
+1. 멘토가 대시보드에서 파일 업로드 (PDF 등)
+2. POST /api/mentor/knowledge (또는 /api/mentor/basic)
+3. 파일 데이터를 PostgreSQL에 바이너리 저장
+4. AI가 파일 내용 분석 → 제목·요약 자동 생성
+5. FAISS 벡터스토어에 문서 임베딩 추가
+6. 이후 학생 질문 시 자동 검색 대상에 포함
+```
+
+### 3-4. 큐레이션 등록 흐름
+
+```
+1. 관리자가 큐레이션 등록 (카테고리 + 내용/파일)
+2. AI가 제목·요약 자동 생성
+3. 큐레이션 벡터스토어에 저장
+4. 학생 대시보드에 "오늘의 큐레이션" 자동 표시
+5. 챗봇에서 관련 질문 시 검색 제공
+```
+
+---
+
+## 4. 데이터베이스 구조
+
+### 주요 테이블
+
+| 테이블 | 용도 |
+| ------ | ---- |
+| `users` | 사용자 계정 (역할: admin/mentor/ta/student) |
+| `rooms` | 채팅방 (학생-AI, 멘토-학생) |
+| `messages` | 대화 메시지 이력 |
+| `booked_slots` | 조교 예약 정보 |
+| `ta_slots` | 조교 가용 시간대 |
+| `curations` | 큐레이션 컨텐츠 |
+| `mentor_docs` | 멘토 최신 자료 (파일 바이너리 포함) |
+| `mentor_basic_docs` | 멘토 기초 자료 (파일 바이너리 포함) |
+| `briefing_reports` | AI 브리핑 리포트 |
+| `handoff_requests` | 1:1 멘토 상담 요청 |
+| `invite_codes` | 수강생 초대 코드 |
+
+### 파일 저장 전략
+
+- 파일 데이터는 PostgreSQL `LargeBinary` 컬럼에 바이너리로 저장
+- 서버 파일시스템에도 디스크 폴백 저장 (로컬 개발용)
+- 파일 조회 시 DB 우선 → 없으면 디스크에서 읽기
+
+---
+
+## 5. 벡터스토어 구조
+
+```
+vectorstore/                    ← 공통 지식 (학원 공지, 규정 등)
+  └── index.faiss
+
+vectorstore_curation/           ← 큐레이션 (채용공고, 뉴스 등)
+  └── index.faiss
+
+vectorstore_mentor/             ← 멘토별 최신 자료
+  └── {mentor_id}/
+      └── index.faiss
+
+vectorstore_mentor_basic/       ← 멘토별 기초 자료
+  └── {mentor_id}/
+      └── index.faiss
+```
+
+- 각 벡터스토어는 독립적으로 관리, 검색 시 해당 스토어만 쿼리
+- 문서 추가/삭제 시 해당 벡터스토어 자동 재구축
+- 검색 결과 상위 4개만 LLM 컨텍스트에 주입 (토큰 절약)
+
+---
+
+## 6. 인증 구조
+
+```
+[웹 로그인]
+  → POST /api/auth/login (이메일 + 비밀번호)
+  → 세션 토큰 발급 → 쿠키에 저장
+  → 이후 모든 API 요청에 토큰 포함
+
+[카카오 로그인]
+  → 카카오 OAuth 2.0 인증 플로우
+  → POST /api/auth/login/kakao (카카오 인가 코드)
+  → 사용자 매칭/생성 → 세션 토큰 발급
+
+[초대 코드]
+  → 멘토가 초대 링크 생성
+  → 수강생이 초대 코드로 가입 → 자동으로 해당 멘토에 배정
+```
+
+---
+
+## 7. 배포 구조
+
+| 항목 | 설정 |
+| ---- | ---- |
+| **플랫폼** | Render (Web Service) |
+| **빌드** | `cd frontend && npm install && npm run build` |
+| **실행** | `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` |
+| **DB** | PostgreSQL (Render 관리형) |
+| **자동 배포** | GitHub `main` 브랜치 push 시 자동 |
+| **정적 파일** | `frontend/dist/`를 FastAPI에서 직접 서빙 (SPA) |
+
+---
+
+## 8. API 엔드포인트 맵
+
+| 경로 | 메서드 | 설명 |
+| ---- | ------ | ---- |
+| `/api/auth/login` | POST | 이메일/비밀번호 로그인 |
+| `/api/auth/login/kakao` | POST | 카카오 OAuth 로그인 |
+| `/api/chat` | POST | 챗봇 메시지 (자동 에이전트 라우팅) |
+| `/api/chat/tips` | POST | 학습 팁 조회 (최신/기초) |
+| `/api/chat/booking/dates` | GET | 예약 가능 날짜 목록 |
+| `/api/chat/booking/slots` | GET | 특정 날짜 시간대 목록 |
+| `/api/chat/booking/confirm` | POST | 예약 확정 + 브리핑 생성 |
+| `/api/chat/booking/my` | GET | 내 예약 목록 |
+| `/api/chat/booking/cancel` | POST | 예약 취소 |
+| `/api/chat/handoff` | POST | 1:1 멘토 상담 요청 |
+| `/api/curation/today` | GET | 오늘의 큐레이션 |
+| `/api/admin/curations` | CRUD | 큐레이션 관리 |
+| `/api/mentor/knowledge/*` | CRUD | 최신 자료 관리 |
+| `/api/mentor/basic/*` | CRUD | 기초 자료 관리 |
+| `/api/ta/slots` | GET | 조교 스케줄 전체 |
+| `/api/ta/schedule-assistant` | POST | 스케줄 챗봇 (자연어→일정) |
+| `/api/kakao/webhook` | POST | 카카오톡 채널 웹훅 |
