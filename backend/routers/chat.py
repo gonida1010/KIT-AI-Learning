@@ -5,7 +5,7 @@
 
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,9 +15,11 @@ from db.store import store
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+_KST = timezone(timedelta(hours=9))
+
 
 def _now():
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(_KST).isoformat(timespec="seconds")
 
 
 def _uid():

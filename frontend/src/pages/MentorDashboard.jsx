@@ -52,13 +52,14 @@ function UploadDropZone({ onFileSelect, uploading }) {
 }
 
 function ActivityItem({ item }) {
+  const ts = item.timestamp?.replace("T", " ")?.slice(0, 16) || "시간 없음";
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <p className="break-words text-sm font-semibold leading-6 text-slate-800">
         {item.question || "질문 기록 없음"} - {item.student_name}
       </p>
       <p className="mt-1 text-xs text-slate-400">
-        {item.timestamp?.slice(0, 16) || "시간 없음"}
+        {ts}
       </p>
       <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
         <p className="text-[11px] font-medium text-slate-500">송부 자료</p>
@@ -241,7 +242,10 @@ export default function MentorDashboard() {
               </div>
               <div className="space-y-2">
                 {taBookings.map((b) => (
-                  <div key={b.slot_id} className="rounded-xl border border-primary-200 bg-white p-3">
+                  <div
+                    key={b.slot_id}
+                    className="rounded-xl border border-primary-200 bg-white p-3"
+                  >
                     <p className="text-sm font-medium text-slate-800">
                       {b.student_name} → 조교 {b.ta_name}
                     </p>
@@ -265,18 +269,18 @@ export default function MentorDashboard() {
               최근 질문 기록
             </div>
             <div className="max-h-[720px] space-y-3 overflow-y-auto pr-1">
-            {recentActivity.length ? (
-              recentActivity.map((item, index) => (
-                <ActivityItem
-                  key={`${item.student_id}-${item.timestamp}-${index}`}
-                  item={item}
-                />
-              ))
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-                최근 24시간 질문 기록이 없습니다.
-              </div>
-            )}
+              {recentActivity.length ? (
+                recentActivity.map((item, index) => (
+                  <ActivityItem
+                    key={`${item.student_id}-${item.timestamp}-${index}`}
+                    item={item}
+                  />
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+                  최근 질문 기록이 없습니다.
+                </div>
+              )}
             </div>
           </div>
         </section>

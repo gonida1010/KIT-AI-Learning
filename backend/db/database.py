@@ -6,7 +6,7 @@ DATABASE_URL 설정 시 PostgreSQL, 미설정 시 SQLite(로컬 개발용).
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -42,5 +42,22 @@ def get_db():
 
 
 def init_db():
-    """모든 테이블 생성 (없으면 CREATE)."""
+    """모든 테이블 생성 (없으면 CREATE) + 마이그레이션."""
     Base.metadata.create_all(bind=engine)
+    _migrate()
+
+
+def _migrate():
+    """기존 테이블에 새 컬럼 추가 (없으면)."""
+    insp = inspect(engine)
+    _add_column_if_missing(insp, "mentor_docs", "file_data", "BYTEA")
+    _add_column_if_missing(insp, "mentor_basic_docs", "file_data", "BYTEA")
+
+
+def _add_column_if_missing(insp, table: str, column: str, col_type: str):
+    if not insp.has_table(table):
+        return
+    existing = {c["name"] for c in insp.get_columns(table)}
+    if column not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}'))

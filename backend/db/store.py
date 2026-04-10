@@ -5,7 +5,7 @@ PostgreSQL 기반 데이터 저장소.
 
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from db.database import SessionLocal, init_db
 from db.models import (
@@ -23,9 +23,11 @@ from db.models import (
     User,
 )
 
+_KST = timezone(timedelta(hours=9))
+
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(_KST).isoformat(timespec="seconds")
 
 
 def _uid() -> str:
@@ -33,8 +35,12 @@ def _uid() -> str:
 
 
 def _row_to_dict(row) -> dict:
-    """SQLAlchemy 모델 인스턴스를 dict 로 변환."""
-    d = {c.key: getattr(row, c.key) for c in row.__table__.columns}
+    """SQLAlchemy 모델 인스턴스를 dict 로 변환 (바이너리 컬럼 제외)."""
+    d = {}
+    for c in row.__table__.columns:
+        if str(c.type) == "LARGE_BINARY" or c.key == "file_data":
+            continue
+        d[c.key] = getattr(row, c.key)
     # metadata_ 컬럼은 metadata 키로 반환
     if "metadata_" in d:
         d["metadata"] = d.pop("metadata_")
@@ -445,6 +451,11 @@ class Store:
                 return data
         return None
 
+    def get_mentor_doc_file_data(self, doc_id: str) -> bytes | None:
+        with self._session() as db:
+            row = db.get(MentorDoc, doc_id)
+            return row.file_data if row else None
+
     # ━━━━━━━━━━━━━━━━━━ Mentor basic docs ━━━━━━━━━━━━━━━
     def add_mentor_basic_doc(self, doc: dict):
         with self._session() as db:
@@ -483,8 +494,13 @@ class Store:
                 return data
         return None
 
+    def get_mentor_basic_doc_file_data(self, doc_id: str) -> bytes | None:
+        with self._session() as db:
+            row = db.get(MentorBasicDoc, doc_id)
+            return row.file_data if row else None
+
     def get_recent_chat_activity(self, mentor_id: str, hours: int = 24) -> list[dict]:
-        cutoff = datetime.now() - timedelta(hours=hours)
+        cutoff = datetime.now(_KST) - timedelta(hours=hours)
         cutoff_str = cutoff.isoformat(timespec="seconds")
 
         with self._session() as db:

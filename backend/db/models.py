@@ -2,7 +2,7 @@
 SQLAlchemy ORM 모델 — 기존 JSON 스토어 구조를 테이블로 매핑.
 """
 
-from sqlalchemy import Boolean, Column, Integer, String, Text, JSON
+from sqlalchemy import Boolean, Column, Integer, LargeBinary, String, Text, JSON
 
 from db.database import Base
 
@@ -117,6 +117,7 @@ class MentorDoc(Base):
     digest_summary = Column(Text, nullable=True)
     uploaded_at = Column(String, nullable=True)
     chunk_count = Column(Integer, default=0)
+    file_data = Column(LargeBinary, nullable=True)
 
 
 class MentorBasicDoc(Base):
@@ -133,6 +134,7 @@ class MentorBasicDoc(Base):
     digest_summary = Column(Text, nullable=True)
     uploaded_at = Column(String, nullable=True)
     chunk_count = Column(Integer, default=0)
+    file_data = Column(LargeBinary, nullable=True)
 
 
 class CurationItem(Base):

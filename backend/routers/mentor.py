@@ -2,11 +2,13 @@
 
 import mimetypes
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+_KST = timezone(timedelta(hours=9))
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from langchain.schema import Document
 
 from db.store import store
@@ -34,7 +36,7 @@ def _doc_is_stale(uploaded_at: str) -> bool:
     if not uploaded_at:
         return False
     try:
-        return datetime.now() - datetime.fromisoformat(uploaded_at) > timedelta(days=14)
+        return datetime.now(_KST) - datetime.fromisoformat(uploaded_at).replace(tzinfo=_KST) > timedelta(days=14)
     except ValueError:
         return False
 
@@ -96,11 +98,11 @@ def _serialize_basic_doc(doc: dict) -> dict:
 @router.get("/dashboard")
 async def mentor_dashboard(token: str = ""):
     mentor = _require_mentor(token)
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(_KST).strftime("%Y-%m-%d")
     today_curations = store.get_curations(date=today)[:3]
     recent_docs = store.get_mentor_docs(mentor["id"])[:5]
     recent_basic_docs = store.get_mentor_basic_docs(mentor["id"])[:5]
-    activity = store.get_recent_chat_activity(mentor["id"], hours=24)[:20]
+    activity = store.get_recent_chat_activity(mentor["id"], hours=168)[:20]
     ta_bookings = store.get_ta_bookings_for_mentor(mentor["id"])[:8]
 
     return {
@@ -206,8 +208,9 @@ async def upload_mentor_knowledge(
         "source_kind": source_kind,
         "digest_title": digest_title,
         "digest_summary": digest_summary,
-        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "uploaded_at": datetime.now(_KST).isoformat(timespec="seconds"),
         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
+        "file_data": payload if file is not None else None,
     }
     store.add_mentor_doc(mentor_doc)
 
@@ -262,11 +265,16 @@ async def open_mentor_asset(doc_id: str):
         raise HTTPException(404, "첨부 없음")
 
     asset_path = MENTOR_ASSET_DIR / doc["mentor_id"] / file_name
-    if not asset_path.exists():
-        raise HTTPException(404, "파일 없음")
+    if asset_path.exists():
+        media_type, _ = mimetypes.guess_type(asset_path.name)
+        return FileResponse(asset_path, media_type=media_type or "application/octet-stream")
 
-    media_type, _ = mimetypes.guess_type(asset_path.name)
-    return FileResponse(asset_path, media_type=media_type or "application/octet-stream")
+    file_bytes = store.get_mentor_doc_file_data(doc_id)
+    if file_bytes:
+        media_type, _ = mimetypes.guess_type(file_name)
+        return Response(content=file_bytes, media_type=media_type or "application/octet-stream")
+
+    raise HTTPException(404, "파일 없음")
 
 
 # ── 기초 자료 API ────────────────────────────────────────
@@ -332,8 +340,9 @@ async def upload_mentor_basic(
         "source_kind": source_kind,
         "digest_title": digest_title,
         "digest_summary": digest_summary,
-        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "uploaded_at": datetime.now(_KST).isoformat(timespec="seconds"),
         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
+        "file_data": payload if file is not None else None,
     }
     store.add_mentor_basic_doc(basic_doc)
 
@@ -388,11 +397,16 @@ async def open_basic_asset(doc_id: str):
         raise HTTPException(404, "첨부 없음")
 
     asset_path = MENTOR_BASIC_ASSET_DIR / doc["mentor_id"] / file_name
-    if not asset_path.exists():
-        raise HTTPException(404, "파일 없음")
+    if asset_path.exists():
+        media_type, _ = mimetypes.guess_type(asset_path.name)
+        return FileResponse(asset_path, media_type=media_type or "application/octet-stream")
 
-    media_type, _ = mimetypes.guess_type(asset_path.name)
-    return FileResponse(asset_path, media_type=media_type or "application/octet-stream")
+    file_bytes = store.get_mentor_basic_doc_file_data(doc_id)
+    if file_bytes:
+        media_type, _ = mimetypes.guess_type(file_name)
+        return Response(content=file_bytes, media_type=media_type or "application/octet-stream")
+
+    raise HTTPException(404, "파일 없음")
 
 
 # ── 초대 링크 ────────────────────────────────────────────

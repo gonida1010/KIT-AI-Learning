@@ -74,9 +74,13 @@ export default function MentorStudents() {
     setVisibleTimelineCount(5);
 
     if (student.has_handoff) {
-      fetch(`/api/mentor/handoff/dismiss/${student.id}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/mentor/handoff/dismiss/${student.id}`, {
+        method: "POST",
+      }).catch(() => {});
       setStudents((prev) =>
-        prev.map((s) => (s.id === student.id ? { ...s, has_handoff: false } : s)),
+        prev.map((s) =>
+          s.id === student.id ? { ...s, has_handoff: false } : s,
+        ),
       );
     }
 
