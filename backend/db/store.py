@@ -445,7 +445,7 @@ class Store:
             db.add(MentorDoc(**{k: v for k, v in doc.items() if hasattr(MentorDoc, k)}))
             db.commit()
 
-    def get_mentor_docs(self, mentor_id: str, query: str | None = None) -> list[dict]:
+    def get_mentor_docs(self, mentor_id: str, query: str | None = None, limit: int | None = None) -> list[dict]:
         with self._session() as db:
             q = db.query(MentorDoc).filter(MentorDoc.mentor_id == mentor_id)
             if query:
@@ -455,8 +455,10 @@ class Store:
                     | MentorDoc.digest_summary.ilike(like)
                     | MentorDoc.filename.ilike(like)
                 )
-            rows = q.order_by(MentorDoc.uploaded_at.desc()).all()
-            return [_row_to_dict(r) for r in rows]
+            q = q.order_by(MentorDoc.uploaded_at.desc())
+            if limit:
+                q = q.limit(limit)
+            return [_row_to_dict(r) for r in q.all()]
 
     def get_mentor_doc(self, mentor_doc_id: str) -> dict | None:
         with self._session() as db:
@@ -488,7 +490,7 @@ class Store:
             db.add(MentorBasicDoc(**{k: v for k, v in doc.items() if hasattr(MentorBasicDoc, k)}))
             db.commit()
 
-    def get_mentor_basic_docs(self, mentor_id: str, query: str | None = None) -> list[dict]:
+    def get_mentor_basic_docs(self, mentor_id: str, query: str | None = None, limit: int | None = None) -> list[dict]:
         with self._session() as db:
             q = db.query(MentorBasicDoc).filter(MentorBasicDoc.mentor_id == mentor_id)
             if query:
@@ -498,8 +500,10 @@ class Store:
                     | MentorBasicDoc.digest_summary.ilike(like)
                     | MentorBasicDoc.filename.ilike(like)
                 )
-            rows = q.order_by(MentorBasicDoc.uploaded_at.desc()).all()
-            return [_row_to_dict(r) for r in rows]
+            q = q.order_by(MentorBasicDoc.uploaded_at.desc())
+            if limit:
+                q = q.limit(limit)
+            return [_row_to_dict(r) for r in q.all()]
 
     def get_mentor_basic_doc(self, doc_id: str) -> dict | None:
         with self._session() as db:
@@ -539,10 +543,12 @@ class Store:
             if not student_map:
                 return []
 
+            sids = list(student_map.keys())
+
             messages = (
                 db.query(ChatMessage)
                 .filter(
-                    ChatMessage.user_id.in_(list(student_map.keys())),
+                    ChatMessage.user_id.in_(sids),
                     ChatMessage.role == "user",
                     ChatMessage.created_at >= cutoff_str,
                 )
@@ -550,20 +556,36 @@ class Store:
                 .all()
             )
 
+            if not messages:
+                return []
+
+            # 한 번에 모든 assistant 메시지를 가져와서 N+1 제거
+            assistant_msgs = (
+                db.query(ChatMessage)
+                .filter(
+                    ChatMessage.user_id.in_(sids),
+                    ChatMessage.role == "assistant",
+                    ChatMessage.created_at >= cutoff_str,
+                )
+                .order_by(ChatMessage.created_at)
+                .all()
+            )
+
+            # user_id 별로 assistant 메시지를 시간순 정렬된 리스트로 그룹핑
+            from collections import defaultdict
+            assistant_by_user: dict[str, list] = defaultdict(list)
+            for a in assistant_msgs:
+                assistant_by_user[a.user_id].append(a)
+
             items = []
             for msg in messages:
-                # 다음 assistant 메시지 찾기
-                assistant = (
-                    db.query(ChatMessage)
-                    .filter(
-                        ChatMessage.user_id == msg.user_id,
-                        ChatMessage.role == "assistant",
-                        ChatMessage.created_at > msg.created_at,
-                    )
-                    .order_by(ChatMessage.created_at)
-                    .first()
-                )
-                metadata = (assistant.metadata_ if assistant else None) or {}
+                # 이진 탐색 대신 간단 순회: 해당 user 의 assistant 중 msg 이후 첫 번째
+                metadata = {}
+                for a in assistant_by_user.get(msg.user_id, []):
+                    if a.created_at > msg.created_at:
+                        metadata = (a.metadata_ or {})
+                        break
+
                 sent_materials = [
                     item.get("digest_title") or item.get("title") or item.get("filename")
                     for item in metadata.get("related_materials", [])
@@ -590,14 +612,17 @@ class Store:
             db.add(CurationItem(**{k: v for k, v in item.items() if hasattr(CurationItem, k)}))
             db.commit()
 
-    def get_curations(self, category: str | None = None, date: str | None = None) -> list[dict]:
+    def get_curations(self, category: str | None = None, date: str | None = None, limit: int | None = None) -> list[dict]:
         with self._session() as db:
             q = db.query(CurationItem)
             if category:
                 q = q.filter(CurationItem.category == category)
             if date:
                 q = q.filter(CurationItem.date == date)
-            rows = q.order_by(CurationItem.date.desc()).all()
+            q = q.order_by(CurationItem.date.desc())
+            if limit:
+                q = q.limit(limit)
+            rows = q.all()
             return [_row_to_dict(r) for r in rows]
 
     @property

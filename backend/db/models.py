@@ -14,8 +14,8 @@ class User(Base):
     kakao_id = Column(String, unique=True, nullable=True, index=True)
     name = Column(String, nullable=False)
     profile_image = Column(String, default="")
-    role = Column(String, nullable=False)  # student, mentor, ta, admin
-    mentor_id = Column(String, nullable=True)
+    role = Column(String, nullable=False, index=True)  # student, mentor, ta, admin
+    mentor_id = Column(String, nullable=True, index=True)
     invite_code = Column(String, nullable=True)
     career_pref = Column(String, nullable=True)
     created_at = Column(String, nullable=False)
@@ -53,24 +53,24 @@ class ChatMessage(Base):
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
     channel = Column(String, nullable=True)
-    role = Column(String, nullable=False)  # user, assistant
+    role = Column(String, nullable=False, index=True)  # user, assistant
     agent_type = Column(String, nullable=True)
     content = Column(Text, nullable=True)
     choices = Column(JSON, nullable=True)
     metadata_ = Column("metadata", JSON, nullable=True)
-    created_at = Column(String, nullable=False)
+    created_at = Column(String, nullable=False, index=True)
 
 
 class Handoff(Base):
     __tablename__ = "handoff_queue"
 
     id = Column(String, primary_key=True)
-    student_id = Column(String, nullable=False)
+    student_id = Column(String, nullable=False, index=True)
     student_name = Column(String, nullable=True)
     reason = Column(String, nullable=True)
     last_message = Column(Text, nullable=True)
     priority = Column(String, nullable=True)
-    status = Column(String, default="pending")
+    status = Column(String, default="pending", index=True)
     created_at = Column(String, nullable=True)
 
 
@@ -83,8 +83,8 @@ class Schedule(Base):
     date = Column(String, nullable=True, index=True)
     start_time = Column(String, nullable=True)
     end_time = Column(String, nullable=True)
-    is_available = Column(Boolean, default=True)
-    booked_by = Column(String, nullable=True)
+    is_available = Column(Boolean, default=True, index=True)
+    booked_by = Column(String, nullable=True, index=True)
     booked_by_name = Column(String, nullable=True)
     booking_phone = Column(String, nullable=True)
     booking_description = Column(Text, nullable=True)
@@ -159,7 +159,7 @@ class StudentEvent(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, nullable=False, index=True)
-    timestamp = Column(String, nullable=True)
+    timestamp = Column(String, nullable=True, index=True)
     event_type = Column(String, nullable=True)
     content = Column(String, nullable=True)
     detail = Column(String, nullable=True)

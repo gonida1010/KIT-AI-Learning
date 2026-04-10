@@ -171,10 +171,10 @@ async def learning_tips(req: TipsRequest):
         mentor_name = mentor.get("name", "") if mentor else ""
 
         if req.type == "basic":
-            raw_docs = store.get_mentor_basic_docs(mentor_id)[:5]
+            raw_docs = store.get_mentor_basic_docs(mentor_id, limit=5)
             asset_prefix = "/api/mentor/basic/assets"
         else:
-            raw_docs = store.get_mentor_docs(mentor_id)[:5]
+            raw_docs = store.get_mentor_docs(mentor_id, limit=5)
             asset_prefix = "/api/mentor/knowledge/assets"
 
         for d in raw_docs:

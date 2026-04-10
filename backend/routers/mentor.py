@@ -105,15 +105,18 @@ def _serialize_basic_doc(doc: dict) -> dict:
 async def mentor_dashboard(token: str = ""):
     mentor = _require_mentor(token)
     today = datetime.now(_KST).strftime("%Y-%m-%d")
-    today_curations = store.get_curations(date=today)[:3]
-    recent_docs = store.get_mentor_docs(mentor["id"])[:5]
-    recent_basic_docs = store.get_mentor_basic_docs(mentor["id"])[:5]
+    today_curations = store.get_curations(date=today, limit=3)
+    recent_docs = store.get_mentor_docs(mentor["id"], limit=5)
+    recent_basic_docs = store.get_mentor_basic_docs(mentor["id"], limit=5)
     activity = store.get_recent_chat_activity(mentor["id"], hours=168)[:20]
     ta_bookings = store.get_ta_bookings_for_mentor(mentor["id"])[:8]
+
+    # pending handoffs — 한 번에 학생 목록으로 필터 (N+1 제거)
+    all_handoffs = store.get_pending_handoffs()
+    my_student_ids = {s["id"] for s in store.get_students_by_mentor(mentor["id"])}
     pending_handoffs = [
-        h for h in store.get_pending_handoffs()
-        if store.get_user(h.get("student_id", "")) and
-           (store.get_user(h["student_id"]) or {}).get("mentor_id") == mentor["id"]
+        h for h in all_handoffs
+        if h.get("student_id", "") in my_student_ids
     ]
 
     return {

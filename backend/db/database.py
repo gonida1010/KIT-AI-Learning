@@ -25,7 +25,7 @@ _engine_kwargs = {"pool_pre_ping": True}
 if _is_sqlite:
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
-    _engine_kwargs.update(pool_size=5, max_overflow=10)
+    _engine_kwargs.update(pool_size=10, max_overflow=20)
 
 engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -48,10 +48,11 @@ def init_db():
 
 
 def _migrate():
-    """기존 테이블에 새 컬럼 추가 (없으면)."""
+    """기존 테이블에 새 컬럼/인덱스 추가 (없으면)."""
     insp = inspect(engine)
     _add_column_if_missing(insp, "mentor_docs", "file_data", "BYTEA")
     _add_column_if_missing(insp, "mentor_basic_docs", "file_data", "BYTEA")
+    _create_indexes_if_missing()
 
 
 def _add_column_if_missing(insp, table: str, column: str, col_type: str):
@@ -61,3 +62,31 @@ def _add_column_if_missing(insp, table: str, column: str, col_type: str):
     if column not in existing:
         with engine.begin() as conn:
             conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}'))
+
+
+def _create_indexes_if_missing():
+    """기존 배포 DB 에 누락된 인덱스 추가."""
+    _indexes = [
+        ("ix_users_role", "users", "role"),
+        ("ix_users_mentor_id", "users", "mentor_id"),
+        ("ix_chat_messages_role", "chat_messages", "role"),
+        ("ix_chat_messages_created_at", "chat_messages", "created_at"),
+        ("ix_handoff_queue_student_id", "handoff_queue", "student_id"),
+        ("ix_handoff_queue_status", "handoff_queue", "status"),
+        ("ix_schedules_is_available", "schedules", "is_available"),
+        ("ix_schedules_booked_by", "schedules", "booked_by"),
+        ("ix_student_events_timestamp", "student_events", "timestamp"),
+    ]
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for idx_name, table, column in _indexes:
+            if not insp.has_table(table):
+                continue
+            existing_idx = {i["name"] for i in insp.get_indexes(table)}
+            if idx_name not in existing_idx:
+                try:
+                    conn.execute(text(
+                        f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({column})"
+                    ))
+                except Exception:
+                    pass
