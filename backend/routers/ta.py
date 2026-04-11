@@ -98,6 +98,7 @@ def _sanitize_rule(rule: dict) -> dict:
 def _sanitize_plan(plan: dict | None) -> dict:
     payload = plan or {}
     return {
+        "mode": payload.get("mode", "full"),
         "summary": (payload.get("summary") or "").strip(),
         "available_rules": [
             _sanitize_rule(rule) for rule in (payload.get("available_rules") or [])
@@ -123,19 +124,31 @@ def _summarize_plan(plan: dict) -> str:
     if plan.get("full_day_off_rules"):
         off_labels = []
         for rule in plan["full_day_off_rules"]:
+            parts = []
             label = _weekday_labels(rule.get("weekdays", []))
             if label:
-                off_labels.append(f"{label} 휴무")
+                parts.append(label)
+            dates = rule.get("dates", [])
+            if dates:
+                parts.append(", ".join(dates))
+            if parts:
+                off_labels.append(f"{' / '.join(parts)} 휴무")
         if off_labels:
             summary_parts.append(" / ".join(off_labels))
 
     if plan.get("available_rules"):
         available_labels = []
         for rule in plan["available_rules"]:
+            parts = []
             label = _weekday_labels(rule.get("weekdays", []))
             if label:
+                parts.append(label)
+            dates = rule.get("dates", [])
+            if dates:
+                parts.append(", ".join(dates))
+            if parts:
                 available_labels.append(
-                    f"{label} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 가능"
+                    f"{' / '.join(parts)} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 가능"
                 )
         if available_labels:
             summary_parts.append(" / ".join(available_labels))
@@ -143,10 +156,16 @@ def _summarize_plan(plan: dict) -> str:
     if plan.get("partial_unavailable_rules"):
         partial_labels = []
         for rule in plan["partial_unavailable_rules"]:
+            parts = []
             label = _weekday_labels(rule.get("weekdays", []))
             if label:
+                parts.append(label)
+            dates = rule.get("dates", [])
+            if dates:
+                parts.append(", ".join(dates))
+            if parts:
                 partial_labels.append(
-                    f"{label} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 불가"
+                    f"{' / '.join(parts)} {rule.get('start_time', '09:00')}~{rule.get('end_time', '22:00')} 불가"
                 )
         if partial_labels:
             summary_parts.append(" / ".join(partial_labels))
@@ -154,10 +173,61 @@ def _summarize_plan(plan: dict) -> str:
     return " | ".join(summary_parts) or "설정 내용을 다시 확인해 주세요."
 
 
-def _fallback_schedule_plan(message: str) -> dict:
+def _fallback_schedule_plan(message: str, target_month: str = "") -> dict:
     text = (message or "").strip()
     off_weekdays: set[int] = set()
     available_weekdays: set[int] = set()
+
+    # Check for specific date mentions (e.g., "17일", "3일, 5일")
+    date_matches = re.findall(r"(\d{1,2})일", text)
+    off_dates: list[str] = []
+    available_dates: list[str] = []
+
+    if date_matches and target_month:
+        for day_str in date_matches:
+            date_val = f"{target_month}-{int(day_str):02d}"
+            if "휴무" in text or "쉬" in text or "off" in text.lower():
+                off_dates.append(date_val)
+            elif "가능" in text or "예약" in text:
+                available_dates.append(date_val)
+            else:
+                off_dates.append(date_val)
+
+    if off_dates or available_dates:
+        time_match = re.search(r"(\d{1,2})\s*시\s*부터\s*(\d{1,2})\s*시\s*까지", text)
+        start_time = "09:00"
+        end_time = "16:00"
+        if time_match:
+            start_time = f"{int(time_match.group(1)):02d}:00"
+            end_time = f"{int(time_match.group(2)):02d}:00"
+
+        summary_parts = []
+        if off_dates:
+            summary_parts.append(f"{', '.join(off_dates)} 휴무")
+        if available_dates:
+            summary_parts.append(f"{', '.join(available_dates)} {start_time}~{end_time} 가능")
+
+        return {
+            "mode": "date_override",
+            "summary": " / ".join(summary_parts),
+            "available_rules": [
+                {
+                    "weekdays": [],
+                    "dates": available_dates,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                }
+            ] if available_dates else [],
+            "full_day_off_rules": [
+                {
+                    "weekdays": [],
+                    "dates": off_dates,
+                    "start_time": "09:00",
+                    "end_time": "22:00",
+                }
+            ] if off_dates else [],
+            "partial_unavailable_rules": [],
+        }
 
     if "주말" in text or "토일" in text:
         off_weekdays.update({5, 6})
@@ -183,6 +253,7 @@ def _fallback_schedule_plan(message: str) -> dict:
         summary_parts.append(f"나머지 요일 {start_time}~{end_time} 예약 가능")
 
     return {
+        "mode": "full",
         "summary": " / ".join(summary_parts) or "설정 내용을 다시 입력해 주세요.",
         "available_rules": [
             {
@@ -215,8 +286,14 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
 당신은 조교 월간 스케줄 설정 비서입니다.
 선택한 월({target_month})에 대해서만 이해하고, 조교의 자연어 지시를 월간 시간표 규칙으로 변환하세요.
 
+mode 필드 결정:
+- 사용자가 특정 날짜(예: 17일, 3일, 7월 20일 등)를 언급하면 mode: "date_override" 를 사용하세요.
+  이 모드에서는 해당 날짜만 변경하고 나머지 기존 스케줄은 유지됩니다.
+- 사용자가 월 전체 패턴(요일별 규칙)을 설정하면 mode: "full" 을 사용하세요.
+
 반드시 아래 JSON 형식으로만 답변하세요:
 {{
+  "mode": "full 또는 date_override",
   "summary": "조교에게 보여줄 짧은 확인 문장",
   "available_rules": [
     {{"weekdays": [0, 1, 2, 3, 4], "dates": [], "start_time": "09:00", "end_time": "16:00"}}
@@ -237,6 +314,42 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
 - 시간은 HH:MM 형식으로만 출력하세요.
 - 사용자가 말하지 않은 규칙은 만들지 마세요.
 - summary 는 1문장으로 짧게 작성하세요.
+
+특정 날짜 규칙 (date_override 모드):
+- 사용자가 "17일 휴무"라고 하면 dates 배열에 "{target_month}-17" 형식으로 넣으세요.
+- "3일, 5일 휴무"라면 dates: ["{target_month}-03", "{target_month}-05"] 로 넣으세요.
+- "20일 10시~14시 가능"이라면 available_rules의 dates에 "{target_month}-20"을 넣으세요.
+- date_override 모드에서는 weekdays는 빈 배열 []로 두세요.
+
+예시 1 — 월 전체 패턴:
+입력: "토일 휴무, 평일은 09시~16시"
+{{
+  "mode": "full",
+  "summary": "토·일 휴무, 평일 09:00~16:00 예약 가능",
+  "available_rules": [{{"weekdays": [0,1,2,3,4], "dates": [], "start_time": "09:00", "end_time": "16:00"}}],
+  "full_day_off_rules": [{{"weekdays": [5,6], "dates": [], "start_time": "09:00", "end_time": "22:00"}}],
+  "partial_unavailable_rules": []
+}}
+
+예시 2 — 특정 날짜 변경:
+입력: "17일 휴무"
+{{
+  "mode": "date_override",
+  "summary": "{target_month}-17 휴무 추가",
+  "available_rules": [],
+  "full_day_off_rules": [{{"weekdays": [], "dates": ["{target_month}-17"], "start_time": "09:00", "end_time": "22:00"}}],
+  "partial_unavailable_rules": []
+}}
+
+예시 3 — 특정 날짜 가능 시간 변경:
+입력: "3일은 10시부터 14시까지만 가능"
+{{
+  "mode": "date_override",
+  "summary": "{target_month}-03 10:00~14:00 예약 가능",
+  "available_rules": [{{"weekdays": [], "dates": ["{target_month}-03"], "start_time": "10:00", "end_time": "14:00"}}],
+  "full_day_off_rules": [],
+  "partial_unavailable_rules": []
+}}
 """
 
     if llm_provider:
@@ -246,7 +359,7 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
         except Exception:
             pass
 
-    return _fallback_schedule_plan(message)
+    return _fallback_schedule_plan(message, target_month)
 
 
 def _matches_rule(target_date: date, rule: dict) -> bool:
@@ -276,13 +389,31 @@ def _new_slot(ta_id: str, ta_name: str, date_str: str, hour: int, slot_type: str
     }
 
 
+def _collect_override_dates(plan: dict) -> set[str]:
+    """Collect all specific dates mentioned in any rule's dates array."""
+    dates: set[str] = set()
+    for key in ("available_rules", "full_day_off_rules", "partial_unavailable_rules"):
+        for rule in plan.get(key, []):
+            dates.update(rule.get("dates", []))
+    return dates
+
+
 def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict) -> dict:
     start, end = _month_bounds(target_month)
-    removed_count = store.clear_unbooked_ta_slots(
-        ta_id,
-        start.strftime("%Y-%m-%d"),
-        end.strftime("%Y-%m-%d"),
-    )
+    mode = plan.get("mode", "full")
+
+    override_dates = _collect_override_dates(plan) if mode == "date_override" else set()
+
+    if mode == "date_override" and override_dates:
+        removed_count = 0
+        for d in override_dates:
+            removed_count += store.clear_unbooked_ta_slots(ta_id, d, d)
+    else:
+        removed_count = store.clear_unbooked_ta_slots(
+            ta_id,
+            start.strftime("%Y-%m-%d"),
+            end.strftime("%Y-%m-%d"),
+        )
 
     created_slots: list[dict] = []
     preserved_booked_count = 0
@@ -290,6 +421,11 @@ def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict
 
     while cursor <= end:
         date_str = cursor.strftime("%Y-%m-%d")
+
+        if mode == "date_override" and date_str not in override_dates:
+            cursor += timedelta(days=1)
+            continue
+
         existing_booked_hours = {
             int(slot["start_time"][:2])
             for slot in store.schedules
