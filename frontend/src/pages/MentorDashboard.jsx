@@ -149,7 +149,7 @@ function RecentDocItem({ doc, onDelete }) {
   );
 }
 
-export default function MentorDashboard() {
+export default function MentorDashboard({ isActive = true }) {
   const { user } = useAuth();
   const [todayCurations, setTodayCurations] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
@@ -181,6 +181,12 @@ export default function MentorDashboard() {
   useEffect(() => {
     if (user?.role === "mentor") fetchData();
   }, [fetchData, user?.role]);
+
+  useEffect(() => {
+    if (user?.role === "mentor" && isActive) {
+      fetchData();
+    }
+  }, [fetchData, isActive, user?.role]);
 
   const uploadFile = async (file) => {
     if (!file) return;

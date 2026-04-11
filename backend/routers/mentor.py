@@ -13,6 +13,12 @@ from langchain.schema import Document
 
 from db.store import store
 from models.schemas import StudentProfile, TimelineEvent
+from services.content_processing import (
+    build_ai_digest,
+    build_source_excerpt,
+    build_vector_text,
+    extract_source_text,
+)
 from services.rag import (
     DATA_DIR,
     add_mentor_document_to_vectorstore,
@@ -50,35 +56,12 @@ def _doc_is_stale(uploaded_at: str) -> bool:
 async def _build_ai_digest(raw_text: str, fallback_name: str) -> tuple[str, str]:
     from main import llm_provider
 
-    cleaned = (raw_text or "").strip()
-    if not cleaned:
-        cleaned = fallback_name
-
-    prompt = """
-당신은 멘토 전용 학습자료 정리 비서입니다.
-원문을 읽고 수강생에게 보여주기 좋은 짧은 제목과 요약을 만드세요.
-
-반드시 아래 JSON 형식으로만 답변하세요:
-{
-  "title": "짧은 제목",
-  "summary": "한두 문장 요약"
-}
-"""
-
-    if llm_provider:
-        try:
-            result = await llm_provider.chat_json(prompt, cleaned[:4000])
-            title = (result.get("title") or "").strip()
-            summary = (result.get("summary") or "").strip()
-            if title and summary:
-                return title[:80], summary[:220]
-        except Exception:
-            pass
-
-    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-    title = lines[0][:60] if lines else Path(fallback_name).stem
-    summary = " ".join(lines[1:4])[:180] if len(lines) > 1 else f"{title} 관련 멘토 자료"
-    return title or Path(fallback_name).stem, summary or f"{fallback_name} 관련 멘토 자료"
+    return await build_ai_digest(
+        raw_text,
+        fallback_name,
+        llm_provider,
+        "멘토 전용 학습자료 정리 비서",
+    )
 
 
 def _serialize_mentor_doc(doc: dict) -> dict:
@@ -180,41 +163,30 @@ def _determine_source_kind(filename: str) -> str:
     return "file"
 
 
-def _extract_text(file_path: Path | None, original_filename: str, source_link: str) -> str:
-    """파일에서 텍스트 추출 (동기, 백그라운드 전용)."""
-    if file_path and file_path.exists():
-        suffix = file_path.suffix.lower()
-        if suffix == ".pdf":
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(str(file_path))
-                content_text = ""
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        content_text += text + "\n"
-                return content_text
-            except Exception:
-                return f"첨부 파일명: {Path(original_filename).stem}"
-        else:
-            return f"첨부 파일명: {Path(original_filename).stem}"
-    return f"외부 링크 자료: {source_link.strip()}"
-
-
 async def _bg_process_knowledge(mentor_id: str, doc_id: str, stored_path: Path | None, original_filename: str, source_link: str, fallback_name: str, payload: bytes | None):
     """백그라운드: 텍스트 추출 → AI 다이제스트 → DB 업데이트 (file_data 포함) → 벡터스토어."""
     try:
-        content_text = _extract_text(stored_path, original_filename, source_link)
+        content_text = await extract_source_text(stored_path, original_filename, source_link)
         digest_title, digest_summary = await _build_ai_digest(content_text, fallback_name)
-        updates: dict = {"digest_title": digest_title, "digest_summary": digest_summary,
-                         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1)}
+        source_excerpt = build_source_excerpt(content_text)
+        updates: dict = {
+            "digest_title": digest_title,
+            "digest_summary": digest_summary,
+            "source_excerpt": source_excerpt,
+            "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
+        }
         if payload is not None:
             updates["file_data"] = payload
         store.update_mentor_doc(doc_id, updates)
-        vector_text = f"제목: {digest_title}\n요약: {digest_summary}\n원문: {content_text or digest_title}"
+        vector_text = build_vector_text(digest_title, digest_summary, source_excerpt, content_text)
         add_mentor_document_to_vectorstore(
             mentor_id,
-            [Document(page_content=vector_text, metadata={"mentor_doc_id": doc_id, "digest_title": digest_title, "filename": fallback_name})],
+            [Document(page_content=vector_text, metadata={
+                "mentor_doc_id": doc_id,
+                "digest_title": digest_title,
+                "filename": fallback_name,
+                "source_excerpt": source_excerpt,
+            })],
         )
     except Exception:
         import traceback; traceback.print_exc()
@@ -264,6 +236,7 @@ async def upload_mentor_knowledge(
         "source_kind": source_kind,
         "digest_title": quick_title,
         "digest_summary": "AI 요약 생성 중...",
+        "source_excerpt": None,
         "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
         "chunk_count": 1,
         "file_data": None,
@@ -296,8 +269,14 @@ async def delete_mentor_knowledge(doc_id: str, token: str = ""):
         docs = [
             LCDoc(
                 page_content=f"제목: {d.get('digest_title', '')}"
-                             f"\n요약: {d.get('digest_summary', '')}",
-                metadata={"mentor_doc_id": d["id"], "digest_title": d.get("digest_title", ""), "filename": d.get("filename", "")},
+                             f"\n요약: {d.get('digest_summary', '')}"
+                             f"\n핵심 원문 발췌:\n{d.get('source_excerpt', '')}",
+                metadata={
+                    "mentor_doc_id": d["id"],
+                    "digest_title": d.get("digest_title", ""),
+                    "filename": d.get("filename", ""),
+                    "source_excerpt": d.get("source_excerpt", ""),
+                },
             )
             for d in remaining
         ]
@@ -349,17 +328,27 @@ async def list_mentor_basic(token: str = "", q: str = "", scope: str = "all", li
 async def _bg_process_basic(mentor_id: str, doc_id: str, stored_path: Path | None, original_filename: str, source_link: str, fallback_name: str, payload: bytes | None):
     """백그라운드: 기초 자료 — 텍스트 추출 → AI 다이제스트 → DB 업데이트 (file_data 포함) → 벡터스토어."""
     try:
-        content_text = _extract_text(stored_path, original_filename, source_link)
+        content_text = await extract_source_text(stored_path, original_filename, source_link)
         digest_title, digest_summary = await _build_ai_digest(content_text, fallback_name)
-        updates: dict = {"digest_title": digest_title, "digest_summary": digest_summary,
-                         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1)}
+        source_excerpt = build_source_excerpt(content_text)
+        updates: dict = {
+            "digest_title": digest_title,
+            "digest_summary": digest_summary,
+            "source_excerpt": source_excerpt,
+            "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
+        }
         if payload is not None:
             updates["file_data"] = payload
         store.update_mentor_basic_doc(doc_id, updates)
-        vector_text = f"제목: {digest_title}\n요약: {digest_summary}\n원문: {content_text or digest_title}"
+        vector_text = build_vector_text(digest_title, digest_summary, source_excerpt, content_text)
         add_mentor_basic_document_to_vectorstore(
             mentor_id,
-            [Document(page_content=vector_text, metadata={"mentor_basic_doc_id": doc_id, "digest_title": digest_title, "filename": fallback_name})],
+            [Document(page_content=vector_text, metadata={
+                "mentor_basic_doc_id": doc_id,
+                "digest_title": digest_title,
+                "filename": fallback_name,
+                "source_excerpt": source_excerpt,
+            })],
         )
     except Exception:
         import traceback; traceback.print_exc()
@@ -407,6 +396,7 @@ async def upload_mentor_basic(
         "source_kind": source_kind,
         "digest_title": quick_title,
         "digest_summary": "AI 요약 생성 중...",
+        "source_excerpt": None,
         "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
         "chunk_count": 1,
         "file_data": None,
@@ -438,8 +428,14 @@ async def delete_mentor_basic(doc_id: str, token: str = ""):
         docs = [
             LCDoc(
                 page_content=f"제목: {d.get('digest_title', '')}"
-                             f"\n요약: {d.get('digest_summary', '')}",
-                metadata={"mentor_basic_doc_id": d["id"], "digest_title": d.get("digest_title", ""), "filename": d.get("filename", "")},
+                             f"\n요약: {d.get('digest_summary', '')}"
+                             f"\n핵심 원문 발췌:\n{d.get('source_excerpt', '')}",
+                metadata={
+                    "mentor_basic_doc_id": d["id"],
+                    "digest_title": d.get("digest_title", ""),
+                    "filename": d.get("filename", ""),
+                    "source_excerpt": d.get("source_excerpt", ""),
+                },
             )
             for d in remaining
         ]

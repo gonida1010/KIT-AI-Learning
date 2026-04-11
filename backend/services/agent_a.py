@@ -84,10 +84,12 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
         if not mentor_doc:
             continue
         seen_ids.add(doc_id)
+        mentor_doc.setdefault("source_excerpt", result.get("source_excerpt") or "")
         latest_docs.append(mentor_doc)
         lines.append(
             f"[최신자료: {mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}]\n"
-            f"요약: {mentor_doc.get('digest_summary', '')}"
+            f"요약: {mentor_doc.get('digest_summary', '')}\n"
+            f"원문 발췌: {mentor_doc.get('source_excerpt') or result.get('content', '')[:400]}"
         )
 
     # 기초 자료 검색
@@ -102,10 +104,12 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
         if not basic_doc:
             continue
         basic_seen.add(doc_id)
+        basic_doc.setdefault("source_excerpt", result.get("source_excerpt") or "")
         basic_docs.append(basic_doc)
         lines.append(
             f"[기초자료: {basic_doc.get('digest_title', basic_doc.get('filename', '자료'))}]\n"
-            f"요약: {basic_doc.get('digest_summary', '')}"
+            f"요약: {basic_doc.get('digest_summary', '')}\n"
+            f"원문 발췌: {basic_doc.get('source_excerpt') or result.get('content', '')[:400]}"
         )
 
     # 벡터 검색 결과가 없으면 DB에서 직접 최신 자료 fallback
@@ -118,7 +122,8 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
                 latest_docs.append(doc)
                 lines.append(
                     f"[최신자료: {doc.get('digest_title', doc.get('filename', '자료'))}]\n"
-                    f"요약: {doc.get('digest_summary', '')}"
+                    f"요약: {doc.get('digest_summary', '')}\n"
+                    f"원문 발췌: {doc.get('source_excerpt', '')}"
                 )
 
     if not basic_docs:
@@ -130,7 +135,8 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
                 basic_docs.append(doc)
                 lines.append(
                     f"[기초자료: {doc.get('digest_title', doc.get('filename', '자료'))}]\n"
-                    f"요약: {doc.get('digest_summary', '')}"
+                    f"요약: {doc.get('digest_summary', '')}\n"
+                    f"원문 발췌: {doc.get('source_excerpt', '')}"
                 )
 
     ctx = "\n\n".join(lines) if lines else "(유사한 멘토 전용 자료 없음)"
@@ -301,6 +307,7 @@ async def handle_agent_a(
                 "id": doc["id"],
                 "digest_title": doc.get("digest_title", doc.get("filename", "자료")),
                 "digest_summary": doc.get("digest_summary", ""),
+                "source_excerpt": doc.get("source_excerpt", ""),
                 "attachment_url": (
                     doc.get("source_url")
                     if doc.get("source_kind") == "link"
@@ -318,6 +325,7 @@ async def handle_agent_a(
                 "id": doc["id"],
                 "digest_title": doc.get("digest_title", doc.get("filename", "자료")),
                 "digest_summary": doc.get("digest_summary", ""),
+                "source_excerpt": doc.get("source_excerpt", ""),
                 "attachment_url": (
                     doc.get("source_url")
                     if doc.get("source_kind") == "link"

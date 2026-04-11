@@ -51,7 +51,9 @@ def _migrate():
     """기존 테이블에 새 컬럼/인덱스 추가 (없으면)."""
     insp = inspect(engine)
     _add_column_if_missing(insp, "mentor_docs", "file_data", "BYTEA")
+    _add_column_if_missing(insp, "mentor_docs", "source_excerpt", "TEXT")
     _add_column_if_missing(insp, "mentor_basic_docs", "file_data", "BYTEA")
+    _add_column_if_missing(insp, "mentor_basic_docs", "source_excerpt", "TEXT")
     _create_indexes_if_missing()
 
 

@@ -42,11 +42,12 @@ function StudentRow({ student, selected, onClick }) {
   );
 }
 
-export default function MentorStudents() {
+export default function MentorStudents({ isActive = true }) {
   const { user } = useAuth();
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [timeline, setTimeline] = useState([]);
+  const [timelineCache, setTimelineCache] = useState({});
   const [visibleTimelineCount, setVisibleTimelineCount] = useState(5);
   const [taBookings, setTaBookings] = useState([]);
   const [inviteCode, setInviteCode] = useState("");
@@ -54,16 +55,34 @@ export default function MentorStudents() {
   const token = localStorage.getItem("edu_sync_token");
 
   useEffect(() => {
-    fetch(`/api/mentor/students/by-mentor/${user.id}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then(setStudents)
-      .catch(() => {});
-
-    fetch(`/api/mentor/dashboard?token=${encodeURIComponent(token || "")}`)
-      .then((res) => (res.ok ? res.json() : {}))
-      .then((data) => setTaBookings(data.ta_bookings || []))
-      .catch(() => {});
+    Promise.all([
+      fetch(`/api/mentor/students/by-mentor/${user.id}`)
+        .then((res) => (res.ok ? res.json() : []))
+        .catch(() => []),
+      fetch(`/api/mentor/dashboard?token=${encodeURIComponent(token || "")}`)
+        .then((res) => (res.ok ? res.json() : {}))
+        .catch(() => ({})),
+    ]).then(([studentList, dashboard]) => {
+      setStudents(studentList);
+      setTaBookings(dashboard.ta_bookings || []);
+    });
   }, [token, user.id]);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    Promise.all([
+      fetch(`/api/mentor/students/by-mentor/${user.id}`)
+        .then((res) => (res.ok ? res.json() : []))
+        .catch(() => []),
+      fetch(`/api/mentor/dashboard?token=${encodeURIComponent(token || "")}`)
+        .then((res) => (res.ok ? res.json() : {}))
+        .catch(() => ({})),
+    ]).then(([studentList, dashboard]) => {
+      setStudents(studentList);
+      setTaBookings(dashboard.ta_bookings || []);
+    });
+  }, [isActive, token, user.id]);
 
   const visibleBookings = selectedStudent
     ? taBookings.filter((item) => item.student_id === selectedStudent.id)
@@ -72,6 +91,11 @@ export default function MentorStudents() {
   const selectStudent = async (student) => {
     setSelectedStudent(student);
     setVisibleTimelineCount(5);
+
+    if (timelineCache[student.id]) {
+      setTimeline(timelineCache[student.id]);
+      return;
+    }
 
     if (student.has_handoff) {
       fetch(`/api/mentor/handoff/dismiss/${student.id}`, {
@@ -87,7 +111,9 @@ export default function MentorStudents() {
     try {
       const res = await fetch(`/api/mentor/student/${student.id}/timeline`);
       const data = await res.json();
-      setTimeline(data.events || []);
+      const events = data.events || [];
+      setTimeline(events);
+      setTimelineCache((prev) => ({ ...prev, [student.id]: events }));
     } catch {
       setTimeline([]);
     }

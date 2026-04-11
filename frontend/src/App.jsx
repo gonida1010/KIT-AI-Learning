@@ -13,6 +13,10 @@ import AdminDashboard from "./pages/AdminDashboard";
 export default function App() {
   const { user, loading } = useAuth();
   const [page, setPage] = useState("chat");
+  const [loadedMentorPages, setLoadedMentorPages] = useState([]);
+  const mentorPage = ["mentor", "students", "knowledge"].includes(page)
+    ? page
+    : "mentor";
 
   useEffect(() => {
     if (user) {
@@ -23,6 +27,16 @@ export default function App() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user?.role !== "mentor") {
+      setLoadedMentorPages([]);
+      return;
+    }
+    setLoadedMentorPages((prev) =>
+      prev.includes(mentorPage) ? prev : [...prev, mentorPage],
+    );
+  }, [mentorPage, user?.role]);
+
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -32,29 +46,38 @@ export default function App() {
 
   if (!user) return <LoginPage />;
 
-  const rolePages = {
-    student: { chat: <StudentChat /> },
-    mentor: {
-      mentor: <MentorDashboard />,
-      students: <MentorStudents />,
-      knowledge: <KnowledgeBase />,
-    },
-    ta: {
-      ta: <TADashboard />,
-    },
-    admin: {
-      admin: <AdminDashboard />,
-    },
+  const renderContent = () => {
+    if (user.role === "student") return <StudentChat />;
+    if (user.role === "ta") return <TADashboard />;
+    if (user.role === "admin") return <AdminDashboard />;
+
+    return (
+      <>
+        {(mentorPage === "mentor" || loadedMentorPages.includes("mentor")) && (
+          <div className={mentorPage === "mentor" ? "block" : "hidden"}>
+            <MentorDashboard isActive={mentorPage === "mentor"} />
+          </div>
+        )}
+        {(mentorPage === "students" || loadedMentorPages.includes("students")) && (
+          <div className={mentorPage === "students" ? "block" : "hidden"}>
+            <MentorStudents isActive={mentorPage === "students"} />
+          </div>
+        )}
+        {(mentorPage === "knowledge" || loadedMentorPages.includes("knowledge")) && (
+          <div className={mentorPage === "knowledge" ? "block" : "hidden"}>
+            <KnowledgeBase isActive={mentorPage === "knowledge"} />
+          </div>
+        )}
+      </>
+    );
   };
-  const pages = rolePages[user.role] || rolePages.student;
-  const currentPage = pages[page] || Object.values(pages)[0];
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-800">
       {user.role !== "student" && (
         <Sidebar current={page} onNavigate={setPage} />
       )}
-      <Layout fullWidth={user.role === "student"}>{currentPage}</Layout>
+      <Layout fullWidth={user.role === "student"}>{renderContent()}</Layout>
     </div>
   );
 }

@@ -10,6 +10,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from db.store import store
+from services.content_processing import build_ai_digest, extract_source_text
 from services.rag import DATA_DIR, add_curation_to_vectorstore, build_curation_vectorstore
 
 router = APIRouter(prefix="/api/curation", tags=["curation"])
@@ -70,34 +71,15 @@ def _fallback_digest(raw_text: str, fallback_name: str) -> tuple[str, str]:
 async def _build_ai_digest(raw_text: str, fallback_name: str) -> tuple[str, str]:
     from main import llm_provider
 
-    cleaned = (raw_text or "").strip()
-    if not cleaned:
-        return _fallback_digest("", fallback_name)
-
-    prompt = """
-당신은 학원 공지 자료 정리 비서입니다.
-업로드된 원문을 읽고 학원 수강생에게 바로 보여줄 수 있게 정리하세요.
-
-반드시 아래 JSON 형식으로만 답변하세요:
-{
-  "title": "짧고 명확한 제목",
-  "summary": "한두 문장 요약"
-}
-"""
-
-    if not llm_provider:
-        return _fallback_digest(cleaned, fallback_name)
-
-    try:
-        result = await llm_provider.chat_json(prompt, cleaned[:4000])
-        title = (result.get("title") or "").strip()
-        summary = (result.get("summary") or "").strip()
-        if title and summary:
-            return title[:80], summary[:220]
-    except Exception:
-        pass
-
-    return _fallback_digest(cleaned, fallback_name)
+    title, summary = await build_ai_digest(
+        raw_text,
+        fallback_name,
+        llm_provider,
+        "학원 공지 자료 정리 비서",
+    )
+    if title and summary:
+        return title, summary
+    return _fallback_digest(raw_text, fallback_name)
 
 
 def _serialize_curation(item: dict) -> dict:
@@ -139,22 +121,12 @@ async def upload_curation(
         stored_path = CURATION_ASSET_DIR / file_name
         content_bytes = await file.read()
         stored_path.write_bytes(content_bytes)
-
         suffix = stored_path.suffix.lower()
-        if suffix == ".pdf":
-            from pypdf import PdfReader
-
-            reader = PdfReader(str(stored_path))
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    content_text += text + "\n"
-        else:
-            content_text = f"첨부 파일명: {Path(file.filename).stem}"
-            if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-                attachment_kind = "image"
+        content_text = await extract_source_text(stored_path, file.filename, "")
+        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            attachment_kind = "image"
     else:
-        content_text = f"외부 링크 자료: {source_link.strip()}"
+        content_text = await extract_source_text(None, "", source_link.strip())
 
     weekday = datetime.strptime(target_date, "%Y-%m-%d").weekday()
     ai_title, ai_summary = await _build_ai_digest(content_text, file_name or source_link)

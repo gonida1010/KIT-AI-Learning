@@ -115,6 +115,7 @@ class MentorDoc(Base):
     source_kind = Column(String, nullable=True)  # file, link, image
     digest_title = Column(String, nullable=True)
     digest_summary = Column(Text, nullable=True)
+    source_excerpt = Column(Text, nullable=True)
     uploaded_at = Column(String, nullable=True)
     chunk_count = Column(Integer, default=0)
     file_data = Column(LargeBinary, nullable=True)
@@ -132,6 +133,7 @@ class MentorBasicDoc(Base):
     source_kind = Column(String, nullable=True)  # file, link, image
     digest_title = Column(String, nullable=True)
     digest_summary = Column(Text, nullable=True)
+    source_excerpt = Column(Text, nullable=True)
     uploaded_at = Column(String, nullable=True)
     chunk_count = Column(Integer, default=0)
     file_data = Column(LargeBinary, nullable=True)

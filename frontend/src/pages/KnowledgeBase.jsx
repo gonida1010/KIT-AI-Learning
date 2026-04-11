@@ -102,7 +102,7 @@ function DocCard({ doc, onDelete }) {
   );
 }
 
-export default function KnowledgeBase() {
+export default function KnowledgeBase({ isActive = true }) {
   const { user } = useAuth();
   const token = localStorage.getItem("edu_sync_token");
 
@@ -127,7 +127,9 @@ export default function KnowledgeBase() {
     ).catch(() => null);
     if (res?.ok) {
       setDocs(await res.json());
+      return;
     }
+    setError("최신 자료를 불러오지 못했습니다.");
   }, [search, token]);
 
   const fetchBasicDocs = useCallback(async () => {
@@ -136,7 +138,9 @@ export default function KnowledgeBase() {
     ).catch(() => null);
     if (res?.ok) {
       setBasicDocs(await res.json());
+      return;
     }
+    setError("기초 자료를 불러오지 못했습니다.");
   }, [basicSearch, token]);
 
   useEffect(() => {
@@ -146,8 +150,15 @@ export default function KnowledgeBase() {
     }
   }, [fetchDocs, fetchBasicDocs, user?.role]);
 
+  useEffect(() => {
+    if (!isActive || user?.role !== "mentor") return;
+    fetchDocs();
+    fetchBasicDocs();
+  }, [fetchBasicDocs, fetchDocs, isActive, user?.role]);
+
   const latestDocs = useMemo(() => docs.filter((doc) => !doc.is_stale), [docs]);
   const staleDocs = useMemo(() => docs.filter((doc) => doc.is_stale), [docs]);
+  const visibleDocs = useMemo(() => docs, [docs]);
   const basicLatest = useMemo(
     () => basicDocs.filter((doc) => !doc.is_stale),
     [basicDocs],
@@ -156,6 +167,7 @@ export default function KnowledgeBase() {
     () => basicDocs.filter((doc) => doc.is_stale),
     [basicDocs],
   );
+  const visibleBasicDocs = useMemo(() => basicDocs, [basicDocs]);
 
   // 최신 자료 업로드
   const uploadFile = async (file) => {
@@ -371,9 +383,9 @@ export default function KnowledgeBase() {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-slate-50 p-5 text-center">
                   <p className="text-2xl font-bold text-slate-800">
-                    {latestDocs.length}
+                    {visibleDocs.length}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">최신 자료</p>
+                  <p className="mt-1 text-xs text-slate-500">전체 자료</p>
                 </div>
                 <div className="rounded-2xl bg-amber-50 p-5 text-center">
                   <p className="text-2xl font-bold text-amber-700">
@@ -391,12 +403,12 @@ export default function KnowledgeBase() {
             </div>
             <div className="space-y-3">
               {latestDocs.length ? (
-                latestDocs.map((doc) => (
+                visibleDocs.map((doc) => (
                   <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
                 ))
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-                  최신 자료가 없습니다.
+                  등록된 자료가 없습니다.
                 </div>
               )}
             </div>
@@ -474,9 +486,9 @@ export default function KnowledgeBase() {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-blue-50 p-5 text-center">
                   <p className="text-2xl font-bold text-blue-800">
-                    {basicLatest.length}
+                    {visibleBasicDocs.length}
                   </p>
-                  <p className="mt-1 text-xs text-blue-600">기초 자료</p>
+                  <p className="mt-1 text-xs text-blue-600">전체 기초 자료</p>
                 </div>
                 <div className="rounded-2xl bg-amber-50 p-5 text-center">
                   <p className="text-2xl font-bold text-amber-700">
@@ -494,7 +506,7 @@ export default function KnowledgeBase() {
             </div>
             <div className="space-y-3">
               {basicLatest.length ? (
-                basicLatest.map((doc) => (
+                visibleBasicDocs.map((doc) => (
                   <DocCard
                     key={doc.id}
                     doc={doc}
@@ -503,7 +515,7 @@ export default function KnowledgeBase() {
                 ))
               ) : (
                 <div className="rounded-2xl border border-dashed border-blue-200 bg-white p-8 text-center text-sm text-slate-400">
-                  기초 자료가 없습니다.
+                  등록된 기초 자료가 없습니다.
                 </div>
               )}
             </div>
