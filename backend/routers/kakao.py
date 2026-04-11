@@ -265,6 +265,12 @@ async def _process_free_input(utterance, student_id, student, retriever, llm_pro
     """자유 입력 처리 — 타임아웃 래핑 대상."""
     routing = await classify_intent(utterance, llm_provider)
     intent = routing["intent"]
+    confidence = routing.get("confidence", 0.5)
+
+    # human_handoff는 confidence 0.8 이상이어야 실제 멘토 연결, 아니면 agent_a로 펴백
+    if intent == "human_handoff" and confidence < 0.8:
+        logger.info(f"멘토 핸드오프 confidence 부족({confidence:.2f}), agent_a로 펴백: {utterance[:30]}")
+        intent = "agent_a"
 
     if intent == "human_handoff":
         store.add_handoff({
