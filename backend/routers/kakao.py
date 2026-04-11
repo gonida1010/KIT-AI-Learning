@@ -114,19 +114,35 @@ def _main_menu_response(student_name: str = "") -> dict:
 @router.post("/webhook")
 async def kakao_webhook(request: Request):
     try:
-        return await _kakao_webhook_inner(request)
+        return await asyncio.wait_for(
+            _kakao_webhook_inner(request),
+            timeout=KAKAO_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("카카오 웹훅 전체 타임아웃")
+        return text_with_quick_replies(
+            "죄송합니다, 응답 생성에 시간이 걸리고 있습니다.\n"
+            "잠시 후 다시 시도하시거나 아래 메뉴를 이용해 주세요.",
+            [
+                {"label": "📰 큐레이션", "messageText": "오늘의 큐레이션"},
+                {"label": "📅 조교 연결", "messageText": "조교 연결"},
+                {"label": "📚 학습 팁", "messageText": "학습 팁"},
+            ],
+            show_handoff=True,
+        )
     except Exception as e:
         logger.error(f"카카오 웹훅 처리 오류: {e}\n{traceback.format_exc()}")
         return simple_text("죄송합니다, 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
 
 
-async def _kakao_webhook_inner(request: Request):
+async def _kakao_webhook_inner(request: Request, body: dict | None = None):
     from main import retriever, llm_provider
     from services.agent_router import classify_intent
     from services.agent_a import handle_agent_a
     from services.agent_b import handle_agent_b
 
-    body = await request.json()
+    if body is None:
+        body = await request.json()
     logger.info(f"카카오 웹훅: {body}")
 
     user_request = body.get("userRequest", {})
@@ -232,32 +248,8 @@ async def _kakao_webhook_inner(request: Request):
         "content": utterance[:60], "detail": "카카오톡 대화",
     })
 
-    # 카카오 스킬 타임아웃(5초) 방지를 위해 asyncio.wait_for 사용
-    try:
-        result = await asyncio.wait_for(
-            _process_free_input(utterance, student_id, student, retriever, llm_provider,
-                                classify_intent, handle_agent_a, handle_agent_b),
-            timeout=KAKAO_TIMEOUT,
-        )
-        return result
-    except asyncio.TimeoutError:
-        logger.warning(f"카카오 타임아웃: {utterance[:40]}")
-        store.add_message(student_id, {
-            "id": _uid(), "user_id": student_id, "channel": "kakao",
-            "role": "assistant", "agent_type": "agent_a",
-            "content": "처리 시간이 초과되었습니다.", "choices": None,
-            "metadata": None, "created_at": _now(),
-        })
-        return text_with_quick_replies(
-            "죄송합니다, 응답 생성에 시간이 걸리고 있습니다.\n"
-            "잠시 후 다시 시도하시거나 아래 메뉴를 이용해 주세요.",
-            [
-                {"label": "📰 큐레이션", "messageText": "오늘의 큐레이션"},
-                {"label": "📅 조교 연결", "messageText": "조교 연결"},
-                {"label": "📚 학습 팁", "messageText": "학습 팁"},
-            ],
-            show_handoff=True,
-        )
+    return await _process_free_input(utterance, student_id, student, retriever, llm_provider,
+                                     classify_intent, handle_agent_a, handle_agent_b)
 
 
 async def _process_free_input(utterance, student_id, student, retriever, llm_provider,
@@ -391,11 +383,25 @@ def _handle_ta_menu() -> dict:
 @router.post("/webhook/schedule")
 async def kakao_schedule_webhook(request: Request):
     try:
-        body = await request.json()
-        return _handle_booking_dates()
+        return await asyncio.wait_for(
+            _schedule_webhook_inner(request),
+            timeout=KAKAO_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("스케줄 웹훅 타임아웃")
+        return simple_text("예약 정보 로딩 중입니다. 잠시 후 다시 시도해 주세요.")
     except Exception as e:
         logger.error(f"스케줄 웹훅 오류: {e}\n{traceback.format_exc()}")
         return simple_text("죄송합니다, 예약 정보를 불러오는 중 오류가 발생했습니다.")
+
+
+async def _schedule_webhook_inner(request: Request):
+    body = await request.json()
+    utterance = body.get("userRequest", {}).get("utterance", "").strip()
+    # 일반 메시지가 이 스킬로 라우팅된 경우 → 메인 웹훅으로 위임
+    if utterance and utterance not in _TA_KEYWORDS and utterance != "예약하기":
+        return await _kakao_webhook_inner(request, body=body)
+    return _handle_booking_dates()
 
 
 def _handle_booking_dates() -> dict:
@@ -663,46 +669,65 @@ def _handle_mentor_handoff(student_id: str) -> dict:
 async def kakao_curation_webhook(request: Request):
     """카테고리별 큐레이션 정보 제공."""
     try:
-        body = await request.json()
-        action_params = body.get("action", {}).get("params", {})
-        category = action_params.get("category", "")
-        kakao_user_id = body.get("userRequest", {}).get("user", {}).get("id", "unknown")
-        student_id = _resolve_student(kakao_user_id)
-
-        categories = [c.strip() for c in category.split(",") if c.strip()] if category else []
-
-        if categories:
-            items = []
-            for cat in categories:
-                items.extend(store.get_curations(category=cat))
-        else:
-            items = store.curation_items
-
-        items = sorted(items, key=lambda x: x.get("date", ""), reverse=True)[:5]
-
-        if not items:
-            return simple_text("해당 카테고리의 정보가 아직 없습니다.")
-
-        lines = []
-        for item in items:
-            lines.append(f"📌 [{item['category']}] {item['title']}")
-            lines.append(f"   {item['summary']}")
-            lines.append(f"   📅 {item['date']}")
-            lines.append("")
-
-        return text_with_quick_replies(
-            "\n".join(lines),
-            [
-                {"label": "📋 채용정보 더보기", "messageText": "채용정보"},
-                {"label": "📰 IT뉴스 더보기", "messageText": "IT뉴스"},
-                {"label": "🏆 자격증·공모전", "messageText": "자격증"},
-                {"label": "📅 조교 연결", "messageText": "조교 연결"},
-            ],
-            show_handoff=True,
+        return await asyncio.wait_for(
+            _curation_webhook_inner(request),
+            timeout=KAKAO_TIMEOUT,
         )
+    except asyncio.TimeoutError:
+        logger.warning("큐레이션 웹훅 타임아웃")
+        return simple_text("큐레이션 정보 로딩 중입니다. 잠시 후 다시 시도해 주세요.")
     except Exception as e:
         logger.error(f"큐레이션 웹훅 오류: {e}\n{traceback.format_exc()}")
         return simple_text("죄송합니다, 큐레이션 정보를 불러오는 중 오류가 발생했습니다.")
+
+
+async def _curation_webhook_inner(request: Request):
+    body = await request.json()
+    utterance = body.get("userRequest", {}).get("utterance", "").strip()
+    # 일반 메시지가 이 스킬로 라우팅된 경우 → 메인 웹훅으로 위임
+    if utterance and utterance not in _CURATION_KEYWORDS:
+        return await _kakao_webhook_inner(request, body=body)
+
+    action_params = body.get("action", {}).get("params", {})
+    category = action_params.get("category", "")
+    kakao_user_id = body.get("userRequest", {}).get("user", {}).get("id", "unknown")
+    student_id = _resolve_student(kakao_user_id)
+
+    # 큐레이션 키워드인 경우 메인 핸들러 사용
+    if utterance in _CURATION_KEYWORDS:
+        return await _handle_curation(student_id, utterance)
+
+    categories = [c.strip() for c in category.split(",") if c.strip()] if category else []
+
+    if categories:
+        items = []
+        for cat in categories:
+            items.extend(store.get_curations(category=cat))
+    else:
+        items = store.curation_items
+
+    items = sorted(items, key=lambda x: x.get("date", ""), reverse=True)[:5]
+
+    if not items:
+        return simple_text("해당 카테고리의 정보가 아직 없습니다.")
+
+    lines = []
+    for item in items:
+        lines.append(f"📌 [{item['category']}] {item['title']}")
+        lines.append(f"   {item['summary']}")
+        lines.append(f"   📅 {item['date']}")
+        lines.append("")
+
+    return text_with_quick_replies(
+        "\n".join(lines),
+        [
+            {"label": "📋 채용정보 더보기", "messageText": "채용정보"},
+            {"label": "📰 IT뉴스 더보기", "messageText": "IT뉴스"},
+            {"label": "🏆 자격증·공모전", "messageText": "자격증"},
+            {"label": "📅 조교 연결", "messageText": "조교 연결"},
+        ],
+        show_handoff=True,
+    )
 
 
 # ── 연결 테스트용 엔드포인트 ─────────────────────────────
