@@ -484,6 +484,15 @@ class Store:
             row = db.get(MentorDoc, doc_id)
             return row.file_data if row else None
 
+    def update_mentor_doc(self, doc_id: str, updates: dict):
+        with self._session() as db:
+            row = db.get(MentorDoc, doc_id)
+            if row:
+                for k, v in updates.items():
+                    if hasattr(row, k):
+                        setattr(row, k, v)
+                db.commit()
+
     # ━━━━━━━━━━━━━━━━━━ Mentor basic docs ━━━━━━━━━━━━━━━
     def add_mentor_basic_doc(self, doc: dict):
         with self._session() as db:
@@ -528,6 +537,15 @@ class Store:
         with self._session() as db:
             row = db.get(MentorBasicDoc, doc_id)
             return row.file_data if row else None
+
+    def update_mentor_basic_doc(self, doc_id: str, updates: dict):
+        with self._session() as db:
+            row = db.get(MentorBasicDoc, doc_id)
+            if row:
+                for k, v in updates.items():
+                    if hasattr(row, k):
+                        setattr(row, k, v)
+                db.commit()
 
     def get_recent_chat_activity(self, mentor_id: str, hours: int = 24) -> list[dict]:
         cutoff = datetime.now(_KST) - timedelta(hours=hours)

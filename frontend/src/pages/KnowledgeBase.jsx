@@ -175,6 +175,8 @@ export default function KnowledgeBase() {
         throw new Error(d.detail || "업로드 실패");
       }
       await fetchDocs();
+      // AI 요약이 백그라운드에서 생성되므로 잠시 후 다시 새로고침
+      setTimeout(() => fetchDocs(), 5000);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -200,6 +202,7 @@ export default function KnowledgeBase() {
       }
       setSourceLink("");
       await fetchDocs();
+      setTimeout(() => fetchDocs(), 5000);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -237,6 +240,7 @@ export default function KnowledgeBase() {
         throw new Error(d.detail || "업로드 실패");
       }
       await fetchBasicDocs();
+      setTimeout(() => fetchBasicDocs(), 5000);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -262,6 +266,7 @@ export default function KnowledgeBase() {
       }
       setBasicSourceLink("");
       await fetchBasicDocs();
+      setTimeout(() => fetchBasicDocs(), 5000);
     } catch (e) {
       setError(e.message);
     } finally {
