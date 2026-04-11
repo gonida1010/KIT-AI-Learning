@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/kakao", tags=["kakao"])
 logger = logging.getLogger(__name__)
 
 KAKAO_TEXT_LIMIT = 990  # simpleText 최대 1000자, 여유분 확보
-KAKAO_TIMEOUT = 4.5  # 카카오 스킬 타임아웃 5초, 여유분 0.5초
+KAKAO_TIMEOUT = 4.8  # 카카오 스킬 타임아웃 5초, 여유분 0.2초
 
 _KST = timezone(timedelta(hours=9))
 

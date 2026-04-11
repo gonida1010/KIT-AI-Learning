@@ -217,6 +217,88 @@ function draftToManualPlan(draft) {
   };
 }
 
+function dateDraftToManualPlan(dateDraft) {
+  const available_rules = [];
+  const full_day_off_rules = [];
+  const partial_unavailable_rules = [];
+
+  Object.entries(dateDraft).forEach(([dateKey, row]) => {
+    if (row.mode === "available") {
+      available_rules.push({
+        weekdays: [],
+        dates: [dateKey],
+        start_time: row.startTime,
+        end_time: row.endTime,
+      });
+      if (row.breakEnabled && row.breakEnd > row.breakStart) {
+        partial_unavailable_rules.push({
+          weekdays: [],
+          dates: [dateKey],
+          start_time: row.breakStart,
+          end_time: row.breakEnd,
+        });
+      }
+    } else if (row.mode === "off") {
+      full_day_off_rules.push({
+        weekdays: [],
+        dates: [dateKey],
+        start_time: "09:00",
+        end_time: "22:00",
+      });
+    }
+  });
+
+  return {
+    mode: "date_override",
+    available_rules,
+    full_day_off_rules,
+    partial_unavailable_rules,
+  };
+}
+
+function buildDateDraftFromSlots(visibleSlots, monthValue) {
+  const draft = {};
+  const monthSlots = visibleSlots.filter((s) => s.date.startsWith(monthValue));
+  const byDate = {};
+  monthSlots.forEach((slot) => {
+    if (!byDate[slot.date]) byDate[slot.date] = [];
+    byDate[slot.date].push(slot);
+  });
+
+  Object.entries(byDate).forEach(([dateKey, daySlots]) => {
+    if (isFullHoliday(daySlots)) {
+      draft[dateKey] = { ...defaultManualRow(), mode: "off" };
+      return;
+    }
+    const workingHours = new Set();
+    const blockedHours = new Set();
+    daySlots.forEach((slot) => {
+      const hour = Number(slot.start_time.slice(0, 2));
+      const st = slotStatus(slot);
+      if (["available", "booked"].includes(st)) workingHours.add(hour);
+      if (st === "blocked") blockedHours.add(hour);
+    });
+    if (workingHours.size) {
+      const sorted = [...workingHours].sort((a, b) => a - b);
+      const row = {
+        ...defaultManualRow(),
+        mode: "available",
+        startTime: `${String(sorted[0]).padStart(2, "0")}:00`,
+        endTime: `${String(sorted[sorted.length - 1] + 1).padStart(2, "0")}:00`,
+      };
+      const onlyBlocked = [...blockedHours].filter((h) => !workingHours.has(h));
+      if (onlyBlocked.length) {
+        const bs = [...onlyBlocked].sort((a, b) => a - b);
+        row.breakEnabled = true;
+        row.breakStart = `${String(bs[0]).padStart(2, "0")}:00`;
+        row.breakEnd = `${String(bs[bs.length - 1] + 1).padStart(2, "0")}:00`;
+      }
+      draft[dateKey] = row;
+    }
+  });
+  return draft;
+}
+
 function buildDraftFromSlots(visibleSlots, monthValue) {
   const draft = Array.from({ length: 7 }, () => defaultManualRow());
   const monthSlots = visibleSlots.filter((slot) =>
@@ -334,6 +416,9 @@ export default function TADashboard() {
     Array.from({ length: 7 }, () => defaultManualRow()),
   );
   const [manualEditorOpen, setManualEditorOpen] = useState(false);
+  const [dateEditorOpen, setDateEditorOpen] = useState(false);
+  const [dateDraft, setDateDraft] = useState({});
+  const [editingDate, setEditingDate] = useState(null);
 
   const setMessage = useCallback((message, type = "info") => {
     setNotice(message);
@@ -557,6 +642,40 @@ export default function TADashboard() {
       manualPlan,
       targetMonth: assistantMonth,
     });
+  };
+
+  const applyDateDraft = async () => {
+    const entries = Object.entries(dateDraft).filter(
+      ([, row]) => row.mode !== "none",
+    );
+    if (!entries.length) {
+      setMessage("날짜별로 설정된 항목이 없습니다.", "error");
+      return;
+    }
+    const manualPlan = dateDraftToManualPlan(dateDraft);
+    await applyScheduleRequest({
+      message: "date_manual",
+      manualPlan,
+      targetMonth: assistantMonth,
+    });
+    setDateDraft({});
+    setEditingDate(null);
+  };
+
+  const updateDateRow = (dateKey, updates) => {
+    setDateDraft((prev) => ({
+      ...prev,
+      [dateKey]: { ...(prev[dateKey] || defaultManualRow()), ...updates },
+    }));
+  };
+
+  const removeDateRow = (dateKey) => {
+    setDateDraft((prev) => {
+      const next = { ...prev };
+      delete next[dateKey];
+      return next;
+    });
+    if (editingDate === dateKey) setEditingDate(null);
   };
 
   const updateManualRow = (weekday, nextRow) => {
@@ -1071,6 +1190,324 @@ export default function TADashboard() {
                     바로 적용
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── 날짜별 설정 ── */}
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-[0_18px_45px_-35px_rgba(16,185,129,0.55)] transition-shadow hover:shadow-[0_24px_50px_-32px_rgba(16,185,129,0.7)]">
+            <button
+              onClick={() => setDateEditorOpen((prev) => !prev)}
+              className="group flex w-full items-center justify-between gap-4 rounded-2xl text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-emerald-800">
+                  날짜별 개별 설정
+                </p>
+                <p className="mt-1 text-xs leading-5 text-emerald-700">
+                  {Object.keys(dateDraft).length
+                    ? `${Object.keys(dateDraft).length}개 날짜 설정 중`
+                    : "달력에서 날짜를 클릭하여 개별 휴무/시간 설정"}
+                </p>
+                <p className="mt-2 text-[11px] font-medium text-emerald-500">
+                  기존 요일 스케줄을 유지하면서 특정 날짜만 변경합니다.
+                </p>
+              </div>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition-all group-hover:border-emerald-300 group-hover:bg-white/95">
+                <span>{dateEditorOpen ? "접기" : "펼쳐보기"}</span>
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${dateEditorOpen ? "rotate-180" : "rotate-0"}`}
+                />
+              </div>
+            </button>
+
+            {dateEditorOpen && (
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-xs leading-5 text-slate-500">
+                    달력에서 날짜를 클릭 → 휴무/예약가능 설정 → 바로 적용
+                  </p>
+                  <button
+                    onClick={() => {
+                      setDateDraft(buildDateDraftFromSlots(visibleSlots, assistantMonth));
+                    }}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300"
+                  >
+                    현재값 불러오기
+                  </button>
+                </div>
+
+                {/* 미니 캘린더 */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-slate-400">
+                    {WEEKDAY_NAMES.map((d) => (
+                      <div key={`dh-${d}`}>{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {(() => {
+                      const [y, m] = assistantMonth.split("-").map(Number);
+                      const miniCells = getMonthDays(y, m - 1);
+                      return miniCells.map((day, idx) => {
+                        if (!day)
+                          return (
+                            <div
+                              key={`de-blank-${idx}`}
+                              className="h-9 rounded-lg bg-slate-50"
+                            />
+                          );
+                        const dk = fmt(y, m - 1, day);
+                        const dr = dateDraft[dk];
+                        const existingSlots = slotsByDate[dk] || [];
+                        const existingHoliday = isFullHoliday(existingSlots);
+                        const existingAvail = existingSlots.some(
+                          (s) => slotStatus(s) === "available" || slotStatus(s) === "booked",
+                        );
+                        let bg = "bg-white border-slate-200 text-slate-700 hover:border-slate-400";
+                        if (dr?.mode === "off")
+                          bg = "bg-amber-100 border-amber-400 text-amber-800";
+                        else if (dr?.mode === "available")
+                          bg = "bg-primary-100 border-primary-400 text-primary-800";
+                        else if (existingHoliday)
+                          bg = "bg-amber-50 border-amber-200 text-amber-600";
+                        else if (existingAvail)
+                          bg = "bg-emerald-50 border-emerald-200 text-emerald-700";
+
+                        return (
+                          <button
+                            key={dk}
+                            onClick={() => {
+                              if (editingDate === dk) {
+                                setEditingDate(null);
+                              } else {
+                                setEditingDate(dk);
+                                if (!dateDraft[dk]) {
+                                  const existing = slotsByDate[dk] || [];
+                                  if (isFullHoliday(existing)) {
+                                    updateDateRow(dk, { mode: "off" });
+                                  } else if (
+                                    existing.some(
+                                      (s) =>
+                                        slotStatus(s) === "available" ||
+                                        slotStatus(s) === "booked",
+                                    )
+                                  ) {
+                                    const hours = existing
+                                      .filter((s) =>
+                                        ["available", "booked"].includes(slotStatus(s)),
+                                      )
+                                      .map((s) => Number(s.start_time.slice(0, 2)));
+                                    const sorted = [...new Set(hours)].sort(
+                                      (a, b) => a - b,
+                                    );
+                                    updateDateRow(dk, {
+                                      mode: "available",
+                                      startTime: `${String(sorted[0]).padStart(2, "0")}:00`,
+                                      endTime: `${String(sorted[sorted.length - 1] + 1).padStart(2, "0")}:00`,
+                                    });
+                                  }
+                                }
+                              }
+                            }}
+                            className={`h-9 rounded-lg border text-xs font-medium transition-colors ${bg} ${editingDate === dk ? "ring-2 ring-emerald-500 ring-offset-1" : ""}`}
+                          >
+                            {day}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-slate-400">
+                    <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-100 border border-amber-400" /> 편집: 휴무</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-100 border border-primary-400" /> 편집: 가능</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-50 border border-amber-200" /> 기존 휴무</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-50 border border-emerald-200" /> 기존 가능</span>
+                  </div>
+                </div>
+
+                {/* 선택된 날짜 설정 패널 */}
+                {editingDate && (
+                  <div className="rounded-2xl border border-emerald-300 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-700">
+                        📅 {editingDate} 설정
+                      </p>
+                      <button
+                        onClick={() => removeDateRow(editingDate)}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300"
+                      >
+                        설정 해제
+                      </button>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      {[
+                        { mode: "none", label: "설정 없음", cls: "bg-slate-900 text-white", off: "bg-slate-100 text-slate-600" },
+                        { mode: "available", label: "예약 가능", cls: "bg-primary-500 text-white", off: "bg-slate-100 text-slate-600" },
+                        { mode: "off", label: "전체 휴무", cls: "bg-amber-500 text-white", off: "bg-slate-100 text-slate-600" },
+                      ].map((opt) => (
+                        <button
+                          key={`${editingDate}-${opt.mode}`}
+                          onClick={() => updateDateRow(editingDate, { mode: opt.mode })}
+                          className={`rounded-full px-3 py-1.5 text-xs font-medium ${(dateDraft[editingDate]?.mode || "none") === opt.mode ? opt.cls : opt.off}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {dateDraft[editingDate]?.mode === "available" && (
+                      <div className="mt-4 space-y-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="text-xs text-slate-500">
+                            시작 시간
+                            <select
+                              value={dateDraft[editingDate]?.startTime || "09:00"}
+                              onChange={(e) =>
+                                updateDateRow(editingDate, {
+                                  startTime: e.target.value,
+                                  endTime:
+                                    (dateDraft[editingDate]?.endTime || "16:00") <= e.target.value
+                                      ? nextHour(e.target.value)
+                                      : dateDraft[editingDate]?.endTime || "16:00",
+                                })
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none"
+                            >
+                              {TIME_OPTIONS.slice(0, -1).map((t) => (
+                                <option key={`${editingDate}-ds-${t}`} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="text-xs text-slate-500">
+                            종료 시간
+                            <select
+                              value={dateDraft[editingDate]?.endTime || "16:00"}
+                              onChange={(e) =>
+                                updateDateRow(editingDate, {
+                                  endTime: e.target.value,
+                                  startTime:
+                                    e.target.value <= (dateDraft[editingDate]?.startTime || "09:00")
+                                      ? previousHour(e.target.value)
+                                      : dateDraft[editingDate]?.startTime || "09:00",
+                                })
+                              }
+                              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none"
+                            >
+                              {TIME_OPTIONS.slice(1).map((t) => (
+                                <option key={`${editingDate}-de-${t}`} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-medium text-slate-600">
+                              휴식 시간
+                            </p>
+                            <button
+                              onClick={() =>
+                                updateDateRow(editingDate, {
+                                  breakEnabled: !dateDraft[editingDate]?.breakEnabled,
+                                })
+                              }
+                              className={`rounded-full px-3 py-1.5 text-xs font-medium ${dateDraft[editingDate]?.breakEnabled ? "bg-amber-500 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
+                            >
+                              {dateDraft[editingDate]?.breakEnabled ? "사용 중" : "없음"}
+                            </button>
+                          </div>
+                          {dateDraft[editingDate]?.breakEnabled && (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <label className="text-xs text-slate-500">
+                                휴식 시작
+                                <select
+                                  value={dateDraft[editingDate]?.breakStart || "12:00"}
+                                  onChange={(e) =>
+                                    updateDateRow(editingDate, {
+                                      breakStart: e.target.value,
+                                      breakEnd:
+                                        (dateDraft[editingDate]?.breakEnd || "13:00") <= e.target.value
+                                          ? nextHour(e.target.value)
+                                          : dateDraft[editingDate]?.breakEnd || "13:00",
+                                    })
+                                  }
+                                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+                                >
+                                  {TIME_OPTIONS.slice(0, -1).map((t) => (
+                                    <option key={`${editingDate}-dbs-${t}`} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="text-xs text-slate-500">
+                                휴식 종료
+                                <select
+                                  value={dateDraft[editingDate]?.breakEnd || "13:00"}
+                                  onChange={(e) =>
+                                    updateDateRow(editingDate, {
+                                      breakEnd: e.target.value,
+                                      breakStart:
+                                        e.target.value <= (dateDraft[editingDate]?.breakStart || "12:00")
+                                          ? previousHour(e.target.value)
+                                          : dateDraft[editingDate]?.breakStart || "12:00",
+                                    })
+                                  }
+                                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+                                >
+                                  {TIME_OPTIONS.slice(1).map((t) => (
+                                    <option key={`${editingDate}-dbe-${t}`} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 설정된 날짜 목록 */}
+                {Object.keys(dateDraft).length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">
+                      설정된 날짜 ({Object.keys(dateDraft).length}건)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(dateDraft)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([dk, row]) => (
+                          <button
+                            key={`tag-${dk}`}
+                            onClick={() => setEditingDate(dk)}
+                            className={`rounded-full px-3 py-1.5 text-[11px] font-medium ${row.mode === "off" ? "bg-amber-100 text-amber-700" : row.mode === "available" ? "bg-primary-100 text-primary-700" : "bg-slate-100 text-slate-500"}`}
+                          >
+                            {dk.slice(5)}{" "}
+                            {row.mode === "off"
+                              ? "휴무"
+                              : row.mode === "available"
+                                ? `${row.startTime}-${row.endTime}`
+                                : "미설정"}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={applyDateDraft}
+                  disabled={loadingAssistant || !Object.keys(dateDraft).length}
+                  className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-40"
+                >
+                  날짜별 설정 적용 (기존 스케줄 유지)
+                </button>
               </div>
             )}
           </div>
