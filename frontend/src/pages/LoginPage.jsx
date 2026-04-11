@@ -54,7 +54,7 @@ export default function LoginPage() {
                   role: "student",
                   emoji: "🎓",
                   label: "수강생",
-                  desc: "AI 챗봇 체험",
+                  desc: "카카오톡 AI 챗봇",
                 },
                 {
                   role: "mentor",

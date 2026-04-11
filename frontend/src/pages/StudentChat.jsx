@@ -15,8 +15,14 @@ import {
   Clock,
   BookOpen,
   Handshake,
+  Search,
+  Menu,
+  ChevronLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+const KAKAO_PROFILE = "🏫";
+const KAKAO_BOT_NAME = "코리아IT-AI챗봇";
 
 const AGENT_BADGES = {
   agent_a: {
@@ -35,23 +41,23 @@ const AGENT_BADGES = {
 
 function CurationCard({ item }) {
   return (
-    <div className="mt-2 p-3 bg-primary-50 border border-primary-200 rounded-lg">
+    <div className="mt-2 p-3 bg-[#f7f7f7] border border-[#e5e5e5] rounded-lg">
       <div className="flex items-center gap-2 mb-1">
-        <Newspaper size={14} className="text-primary-500" />
-        <span className="text-xs text-primary-600 font-medium">
+        <Newspaper size={14} className="text-[#555]" />
+        <span className="text-xs text-[#888] font-medium">
           {item.category} · {item.date}
         </span>
       </div>
-      <p className="text-sm text-slate-800 font-medium">{item.title}</p>
+      <p className="text-[13px] text-[#333] font-medium">{item.title}</p>
       {item.summary && (
-        <p className="text-xs text-slate-500 mt-1">{item.summary}</p>
+        <p className="text-xs text-[#777] mt-1">{item.summary}</p>
       )}
       {item.attachment_url && (
         <a
           href={item.attachment_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 mt-2 text-xs text-primary-600 hover:text-primary-800 font-medium"
+          className="inline-flex items-center gap-1 mt-2 text-xs text-[#4A90D9] hover:text-[#3570B0] font-medium"
         >
           <ExternalLink size={12} /> 원문 보기
         </a>
@@ -63,16 +69,16 @@ function CurationCard({ item }) {
 function MentorDocCard({ doc }) {
   const isLink = doc.source_kind === "link";
   return (
-    <div className="mt-2 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+    <div className="mt-2 p-3 bg-[#f7f7f7] border border-[#e5e5e5] rounded-lg">
       <div className="flex items-center gap-2 mb-1">
-        <FileText size={14} className="text-violet-500" />
-        <span className="text-xs text-violet-600 font-medium">멘토 자료</span>
+        <FileText size={14} className="text-[#555]" />
+        <span className="text-xs text-[#888] font-medium">멘토 자료</span>
       </div>
-      <p className="text-sm text-slate-800 font-medium">
+      <p className="text-[13px] text-[#333] font-medium">
         {doc.title || doc.digest_title}
       </p>
       {(doc.summary || doc.digest_summary) && (
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-[#777] mt-1">
           {doc.summary || doc.digest_summary}
         </p>
       )}
@@ -82,7 +88,7 @@ function MentorDocCard({ doc }) {
             href={doc.attachment_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium"
+            className="inline-flex items-center gap-1 text-xs text-[#4A90D9] hover:text-[#3570B0] font-medium"
           >
             <ExternalLink size={12} /> {isLink ? "링크 열기" : "원문 보기"}
           </a>
@@ -90,7 +96,7 @@ function MentorDocCard({ doc }) {
             <a
               href={doc.attachment_url}
               download
-              className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium"
+              className="inline-flex items-center gap-1 text-xs text-[#4A90D9] hover:text-[#3570B0] font-medium"
             >
               <Download size={12} /> 다운로드
             </a>
@@ -104,12 +110,12 @@ function MentorDocCard({ doc }) {
 function ChoiceButtons({ choices, onSelect }) {
   if (!choices?.length) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="mt-2 flex flex-wrap gap-1.5">
       {choices.map((c, i) => (
         <button
           key={i}
           onClick={() => onSelect(c.label || c.description || c, c)}
-          className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-primary-50 text-slate-700 hover:text-primary-700 border border-slate-200 hover:border-primary-300 rounded-full transition-colors"
+          className="px-3.5 py-2 text-[13px] bg-white text-[#3b1e1e] border border-[#ddd] rounded-full shadow-sm hover:bg-[#f5f0e8] transition-colors"
         >
           {c.label || c}
         </button>
@@ -122,121 +128,122 @@ function WelcomeActions({ onAction, disabled }) {
   const actions = [
     {
       key: "curation",
-      label: "오늘의 큐레이션",
-      icon: <Newspaper size={15} className="shrink-0" />,
-      desc: "학원 공지 · 뉴스 · 채용 · 공모전",
-      color:
-        "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300",
+      label: "📰 오늘의 큐레이션",
+      desc: "학원 공지 · 뉴스 · 채용",
     },
     {
       key: "ta",
-      label: "조교 연결",
-      icon: <Calendar size={15} className="shrink-0" />,
+      label: "📅 조교 연결",
       desc: "보충수업 예약 · 학습 질문",
-      color:
-        "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300",
     },
     {
       key: "tips",
-      label: "학습 팁",
-      icon: <BookOpen size={15} className="shrink-0" />,
+      label: "📚 학습 팁",
       desc: "담당 멘토 최신 자료",
-      color:
-        "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200 hover:border-violet-300",
     },
     {
       key: "mentor",
-      label: "멘토 연결",
-      icon: <Handshake size={15} className="shrink-0" />,
+      label: "🙋‍♂️ 멘토 연결",
       desc: "1:1 상담 요청",
-      color:
-        "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300",
     },
   ];
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2">
+    <div className="mt-2 flex flex-wrap gap-1.5">
       {actions.map((a) => (
         <button
           key={a.key}
           onClick={() => onAction(a.key)}
           disabled={disabled}
-          className={`flex flex-col items-start px-3 py-2.5 border rounded-xl text-left transition-colors disabled:opacity-40 ${a.color}`}
+          className="px-3.5 py-2 text-[13px] bg-white text-[#3b1e1e] border border-[#ddd] rounded-full shadow-sm hover:bg-[#f5f0e8] transition-colors disabled:opacity-40"
         >
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            {a.icon}
-            {a.label}
-          </span>
-          <span className="text-[11px] opacity-70 mt-0.5">{a.desc}</span>
+          {a.label}
         </button>
       ))}
     </div>
   );
 }
 
+function KakaoTime() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const ampm = h < 12 ? "오전" : "오후";
+  const h12 = h % 12 || 12;
+  return (
+    <span className="text-[10px] text-[#999] whitespace-nowrap">
+      {ampm} {h12}:{m}
+    </span>
+  );
+}
+
 function ChatMessage({ msg, onSelect, onQuickAction, sending }) {
   const isUser = msg.role === "user";
-  const badge = AGENT_BADGES[msg.agent_type];
+
+  if (isUser) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-end items-end gap-1.5 mb-2"
+      >
+        <KakaoTime />
+        <div className="max-w-[70%] px-3 py-2 rounded-xl text-[13.5px] leading-[1.55] whitespace-pre-wrap bg-[#FEE500] text-[#3b1e1e] rounded-tr-[4px] shadow-sm">
+          {msg.content}
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}
+      className="flex items-start gap-2 mb-2"
     >
-      <div
-        className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-          isUser ? "bg-primary-500 text-white" : "bg-slate-200 text-slate-600"
-        }`}
-      >
-        {isUser ? <User size={16} /> : <Bot size={16} />}
+      {/* 프로필 */}
+      <div className="shrink-0 w-10 h-10 rounded-xl bg-[#4A90D9] flex items-center justify-center text-white text-lg shadow-sm overflow-hidden">
+        <span className="leading-none font-bold text-[11px]">IT<br/>KOREA</span>
       </div>
-      <div className={`max-w-[80%] ${isUser ? "text-right" : ""}`}>
-        {badge && (
-          <span
-            className={`inline-block px-2 py-0.5 text-[10px] rounded-full mb-1 ${badge.color}`}
-          >
-            {badge.label}
-          </span>
-        )}
-        <div
-          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-            isUser
-              ? "bg-primary-500 text-white rounded-br-md"
-              : "bg-white text-slate-700 border border-slate-200 rounded-bl-md shadow-sm"
-          }`}
-        >
-          {msg.content}
-        </div>
-        {msg.curation_items?.map((item, i) => (
-          <CurationCard key={i} item={item} />
-        ))}
-        {msg.mentor_docs?.map((doc, i) => (
-          <MentorDocCard key={`md-${i}`} doc={doc} />
-        ))}
-        {(() => {
-          const shownIds = new Set(msg.mentor_docs?.map((d) => d.id) || []);
-          const unique = (msg.related_materials || []).filter(
-            (d) => !shownIds.has(d.id),
-          );
-          const seen = new Set();
-          return unique
-            .filter((d) => {
-              if (seen.has(d.id)) return false;
-              seen.add(d.id);
-              return true;
-            })
-            .map((doc, i) => <MentorDocCard key={`rm-${i}`} doc={doc} />);
-        })()}
-        <ChoiceButtons choices={msg.choices} onSelect={onSelect} />
-        {msg.isWelcome && (
-          <WelcomeActions onAction={onQuickAction} disabled={sending} />
-        )}
-        {msg.agent_type === "human_handoff" && (
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
-            <AlertTriangle size={12} />
-            멘토에게 상담이 접수되었습니다
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-medium text-[#333] mb-1">{KAKAO_BOT_NAME}</p>
+        <div className="flex items-end gap-1.5">
+          <div className="max-w-[85%]">
+            <div className="px-3 py-2.5 rounded-xl text-[13.5px] leading-[1.55] whitespace-pre-wrap bg-white text-[#333] rounded-tl-[4px] shadow-sm">
+              {msg.content}
+            </div>
+            {msg.curation_items?.map((item, i) => (
+              <CurationCard key={i} item={item} />
+            ))}
+            {msg.mentor_docs?.map((doc, i) => (
+              <MentorDocCard key={`md-${i}`} doc={doc} />
+            ))}
+            {(() => {
+              const shownIds = new Set(msg.mentor_docs?.map((d) => d.id) || []);
+              const unique = (msg.related_materials || []).filter(
+                (d) => !shownIds.has(d.id),
+              );
+              const seen = new Set();
+              return unique
+                .filter((d) => {
+                  if (seen.has(d.id)) return false;
+                  seen.add(d.id);
+                  return true;
+                })
+                .map((doc, i) => <MentorDocCard key={`rm-${i}`} doc={doc} />);
+            })()}
+            <ChoiceButtons choices={msg.choices} onSelect={onSelect} />
+            {msg.isWelcome && (
+              <WelcomeActions onAction={onQuickAction} disabled={sending} />
+            )}
+            {msg.agent_type === "human_handoff" && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
+                <AlertTriangle size={12} />
+                멘토에게 상담이 접수되었습니다
+              </div>
+            )}
           </div>
-        )}
+          <KakaoTime />
+        </div>
       </div>
     </motion.div>
   );
@@ -752,28 +759,30 @@ export default function StudentChat() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50">
-      {/* Header */}
-      <header className="shrink-0 flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center">
-            <Bot size={18} className="text-primary-600" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-800">Edu-Sync AI</h1>
-            <p className="text-[11px] text-slate-400">멀티 에이전트 챗봇</p>
-          </div>
-        </div>
+    <div className="flex flex-col h-full bg-[#B2C7D9]">
+      {/* ── KakaoTalk Header ── */}
+      <header className="shrink-0 flex items-center justify-between px-3 py-2.5 bg-[#B2C7D9]">
         <button
           onClick={logout}
-          className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+          className="p-1 text-[#555] hover:text-[#222] transition-colors"
+          title="나가기"
         >
-          <LogOut size={18} />
+          <ChevronLeft size={22} />
         </button>
+        <h1 className="text-[15px] font-semibold text-[#333]">{KAKAO_BOT_NAME}</h1>
+        <div className="flex items-center gap-2">
+          <Search size={18} className="text-[#555]" />
+          <Menu size={18} className="text-[#555]" />
+        </div>
       </header>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* ── 수강생 카카오톡 화면 라벨 ── */}
+      <div className="text-center py-1">
+        <span className="inline-block px-3 py-0.5 bg-[#00000018] text-[11px] text-[#555] rounded-full">수강생 카카오톡 화면 (데모)</span>
+      </div>
+
+      {/* ── Messages ── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
         <AnimatePresence>
           {messages.map((msg, i) => (
             <ChatMessage
@@ -810,41 +819,34 @@ export default function StudentChat() {
           ))}
         </AnimatePresence>
         {sending && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600">
-              <Bot size={16} />
+          <div className="flex items-start gap-2 mb-2">
+            <div className="shrink-0 w-10 h-10 rounded-xl bg-[#4A90D9] flex items-center justify-center text-white overflow-hidden shadow-sm">
+              <span className="leading-none font-bold text-[11px]">IT<br/>KOREA</span>
             </div>
-            <div className="px-4 py-2.5 bg-white border border-slate-200 rounded-2xl rounded-bl-md shadow-sm">
-              <div className="flex gap-1">
-                <span
-                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-                  style={{ animationDelay: "0ms" }}
-                />
-                <span
-                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-                  style={{ animationDelay: "150ms" }}
-                />
-                <span
-                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-                  style={{ animationDelay: "300ms" }}
-                />
+            <div>
+              <p className="text-[12px] font-medium text-[#333] mb-1">{KAKAO_BOT_NAME}</p>
+              <div className="px-3 py-2.5 bg-white rounded-xl rounded-tl-[4px] shadow-sm">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 bg-[#999] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Mentor connection + Input */}
-      <div className="shrink-0 bg-white border-t border-slate-200">
-        {/* Persistent mentor button */}
+      {/* ── Bottom: mentor button + input ── */}
+      <div className="shrink-0 bg-white border-t border-[#e0e0e0]">
         <div className="px-3 pt-2">
           <button
             onClick={requestMentorHandoff}
             disabled={handoffSending}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#FEE500] hover:bg-[#f5dd00] text-[#3b1e1e] rounded-lg text-[13px] font-medium transition-colors disabled:opacity-40"
           >
-            <UserCircle size={16} />
-            {handoffSending ? "연결 중..." : "1:1 멘토 상담 연결"}
+            <UserCircle size={15} />
+            {handoffSending ? "연결 중..." : "🙋‍♂️ 1:1 멘토 상담 연결"}
           </button>
         </div>
         <form
@@ -852,22 +854,22 @@ export default function StudentChat() {
             e.preventDefault();
             send();
           }}
-          className="flex gap-2 p-3"
+          className="flex items-center gap-2 p-2.5"
         >
           <input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="질문을 입력하세요..."
-            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-100"
+            placeholder="메시지를 입력하세요"
+            className="flex-1 px-3 py-2 bg-[#f5f5f5] border border-[#e0e0e0] rounded-full text-[13.5px] text-[#333] placeholder:text-[#aaa] focus:outline-none focus:border-[#ccc]"
             disabled={sending}
           />
           <button
             type="submit"
             disabled={!input.trim() || sending}
-            className="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-40 rounded-xl transition-colors"
+            className="shrink-0 px-3.5 py-2 bg-[#FEE500] hover:bg-[#f5dd00] text-[#3b1e1e] text-[13px] font-semibold rounded-full disabled:opacity-30 transition-colors"
           >
-            <Send size={18} />
+            전송
           </button>
         </form>
       </div>
