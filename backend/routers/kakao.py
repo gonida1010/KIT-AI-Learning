@@ -32,8 +32,11 @@ _DEFAULT_MENTOR_ID = "mentor_001"
 
 WEEKDAY_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
+# pending slot 임시 저장 (예약 시간 선택 → 설명 입력 사이)
+_pending_slots: dict[str, str] = {}
+
 # ── 웹 챗봇과 동일한 4대 메뉴 키워드 ────────────────────
-_WELCOME_KEYWORDS = {"기본상담", "시작", "시작하기", "처음으로", "메뉴", "안녕", "안녕하세요", "하이", "hello", "hi"}
+_WELCOME_KEYWORDS = {"기본상담", "기본 상담", "시작", "시작하기", "처음으로", "메뉴", "안녕", "안녕하세요", "하이", "hello", "hi", "상담"}
 _CURATION_KEYWORDS = {"오늘의 큐레이션", "큐레이션", "뉴스", "채용정보", "IT뉴스", "AI타임스", "자격증", "공모전", "채용", "뉴스 보기"}
 _TA_KEYWORDS = {"조교 연결", "조교", "보충수업", "보충 수업", "예약하기", "조교 예약"}
 _TIPS_KEYWORDS = {"학습 팁", "학습팁", "멘토 자료", "최신 자료", "기초 자료", "학습자료"}
@@ -183,12 +186,13 @@ async def _kakao_webhook_inner(request: Request):
         slot = next((s for s in store.get_available_slots() if s.get("id") == slot_id), None)
         if not slot:
             return simple_text("선택한 시간이 더 이상 예약 가능하지 않습니다. 다시 확인해 주세요.")
+        # 슬롯 ID를 임시 저장 (다음 자유입력을 설명으로 사용)
+        _pending_slots[student_id] = slot_id
         return simple_text(
-            f"선택한 시간: {slot['ta_name']} | {slot['date']} {slot['start_time']}~{slot['end_time']}\n\n"
-            f"어떤 내용을 보충받고 싶으신지 간단히 적어 주세요.\n"
-            f"(이름/연락처도 함께 보내시면 조교에게 전달됩니다)\n\n"
-            f"예시: 예약정보:{slot_id}:홍길동 / 010-1234-5678 / 파이썬 클래스 self가 헷갈려요\n"
-            f"또는: 예약설명:{slot_id}:파이썬 클래스 self가 헷갈려요"
+            f"✅ 선택한 시간: {slot['ta_name']} 조교\n"
+            f"📅 {slot['date']} {slot['start_time']}~{slot['end_time']}\n\n"
+            f"보충받고 싶은 내용을 입력해 주세요.\n"
+            f"(예: 파이썬 클래스 self가 헷갈려요)"
         )
 
     # ── 예약 플로우: 설명 입력 → 예약 확정 ──
@@ -204,6 +208,17 @@ async def _kakao_webhook_inner(request: Request):
     cancel_match = re.match(r"^예약취소:(?P<slot_id>[a-f0-9]{12})$", utterance)
     if cancel_match:
         return _handle_cancel_confirm(student_id, cancel_match.group("slot_id"))
+
+    # ── pending_slot이 있으면 → 자유 입력을 예약 설명으로 처리 ──
+    pending_slot = _pending_slots.pop(student_id, None)
+    if pending_slot:
+        # 예약설명으로 변환
+        class _FakeMatch:
+            def group(self, name):
+                if name == "slot_id": return pending_slot
+                if name == "desc": return utterance
+                return ""
+        return await _handle_booking_confirm(student_id, None, _FakeMatch())
 
     # ── 자유 입력 → 에이전트 라우팅 (웹 챗봇과 동일) ──
     store.add_message(student_id, {
