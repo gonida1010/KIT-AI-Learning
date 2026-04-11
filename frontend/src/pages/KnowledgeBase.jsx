@@ -174,11 +174,14 @@ export default function KnowledgeBase() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "업로드 실패");
       }
-      await fetchDocs();
-      // AI 요약이 백그라운드에서 생성되므로 잠시 후 다시 새로고침
-      setTimeout(() => fetchDocs(), 5000);
+      const { document } = await res.json();
+      if (document) setDocs((prev) => [document, ...prev]);
+      // AI 요약 백그라운드 완료 후 자동 반영
+      setTimeout(() => fetchDocs(), 6000);
+      setTimeout(() => fetchDocs(), 15000);
     } catch (e) {
       setError(e.message);
+      setTimeout(() => setError(""), 4000);
     } finally {
       setUploading(false);
     }
@@ -200,11 +203,14 @@ export default function KnowledgeBase() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "링크 등록 실패");
       }
+      const { document } = await res.json();
+      if (document) setDocs((prev) => [document, ...prev]);
       setSourceLink("");
-      await fetchDocs();
-      setTimeout(() => fetchDocs(), 5000);
+      setTimeout(() => fetchDocs(), 6000);
+      setTimeout(() => fetchDocs(), 15000);
     } catch (e) {
       setError(e.message);
+      setTimeout(() => setError(""), 4000);
     } finally {
       setUploading(false);
     }
@@ -239,10 +245,13 @@ export default function KnowledgeBase() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "업로드 실패");
       }
-      await fetchBasicDocs();
-      setTimeout(() => fetchBasicDocs(), 5000);
+      const { document } = await res.json();
+      if (document) setBasicDocs((prev) => [document, ...prev]);
+      setTimeout(() => fetchBasicDocs(), 6000);
+      setTimeout(() => fetchBasicDocs(), 15000);
     } catch (e) {
       setError(e.message);
+      setTimeout(() => setError(""), 4000);
     } finally {
       setBasicUploading(false);
     }
@@ -264,11 +273,14 @@ export default function KnowledgeBase() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.detail || "링크 등록 실패");
       }
+      const { document } = await res.json();
+      if (document) setBasicDocs((prev) => [document, ...prev]);
       setBasicSourceLink("");
-      await fetchBasicDocs();
-      setTimeout(() => fetchBasicDocs(), 5000);
+      setTimeout(() => fetchBasicDocs(), 6000);
+      setTimeout(() => fetchBasicDocs(), 15000);
     } catch (e) {
       setError(e.message);
+      setTimeout(() => setError(""), 4000);
     } finally {
       setBasicUploading(false);
     }

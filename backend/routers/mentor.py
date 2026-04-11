@@ -172,38 +172,51 @@ async def list_mentor_knowledge(token: str = "", q: str = "", scope: str = "all"
     return [_serialize_mentor_doc(doc) for doc in docs[:limit]]
 
 
-def _extract_text_and_kind(file_path: Path, original_filename: str, source_link: str) -> tuple[str, str]:
-    """파일에서 텍스트 추출 + source_kind 결정 (동기)."""
-    if file_path:
+def _determine_source_kind(filename: str) -> str:
+    """파일 확장자로 source_kind 결정 (즉시)."""
+    suffix = Path(filename).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+        return "image"
+    return "file"
+
+
+def _extract_text(file_path: Path | None, original_filename: str, source_link: str) -> str:
+    """파일에서 텍스트 추출 (동기, 백그라운드 전용)."""
+    if file_path and file_path.exists():
         suffix = file_path.suffix.lower()
-        content_text = ""
-        source_kind = "file"
         if suffix == ".pdf":
-            from pypdf import PdfReader
-            reader = PdfReader(str(file_path))
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    content_text += text + "\n"
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(str(file_path))
+                content_text = ""
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        content_text += text + "\n"
+                return content_text
+            except Exception:
+                return f"첨부 파일명: {Path(original_filename).stem}"
         else:
-            content_text = f"첨부 파일명: {Path(original_filename).stem}"
-            if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-                source_kind = "image"
-        return content_text, source_kind
-    return f"외부 링크 자료: {source_link.strip()}", "link"
+            return f"첨부 파일명: {Path(original_filename).stem}"
+    return f"외부 링크 자료: {source_link.strip()}"
 
 
-async def _bg_digest_and_index_knowledge(mentor_id: str, doc_id: str, content_text: str, fallback_name: str):
-    """백그라운드: AI 다이제스트 생성 → DB 업데이트 → 벡터스토어 인덱싱."""
+async def _bg_process_knowledge(mentor_id: str, doc_id: str, stored_path: Path | None, original_filename: str, source_link: str, fallback_name: str, payload: bytes | None):
+    """백그라운드: 텍스트 추출 → AI 다이제스트 → DB 업데이트 (file_data 포함) → 벡터스토어."""
     try:
+        content_text = _extract_text(stored_path, original_filename, source_link)
         digest_title, digest_summary = await _build_ai_digest(content_text, fallback_name)
-        store.update_mentor_doc(doc_id, {"digest_title": digest_title, "digest_summary": digest_summary})
+        updates: dict = {"digest_title": digest_title, "digest_summary": digest_summary,
+                         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1)}
+        if payload is not None:
+            updates["file_data"] = payload
+        store.update_mentor_doc(doc_id, updates)
         vector_text = f"제목: {digest_title}\n요약: {digest_summary}\n원문: {content_text or digest_title}"
         add_mentor_document_to_vectorstore(
             mentor_id,
             [Document(page_content=vector_text, metadata={"mentor_doc_id": doc_id, "digest_title": digest_title, "filename": fallback_name})],
         )
-    except Exception as e:
+    except Exception:
         import traceback; traceback.print_exc()
 
 
@@ -224,25 +237,23 @@ async def upload_mentor_knowledge(
     stored_name = ""
     payload = None
     stored_path = None
+    original_filename = ""
 
     if file is not None:
         if not file.filename:
             raise HTTPException(400, "파일명 없음")
-        stored_name = f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
+        original_filename = file.filename
+        stored_name = f"{uuid.uuid4().hex[:8]}_{Path(original_filename).name}"
         stored_path = mentor_dir / stored_name
         payload = await file.read()
         stored_path.write_bytes(payload)
 
-    content_text, source_kind = _extract_text_and_kind(
-        stored_path, file.filename if file else "", source_link
-    )
-
-    # 즉시 DB 저장 (폴백 제목 사용)
+    # source_kind은 확장자로 즉시 판별 (텍스트 추출 불필요)
+    source_kind = _determine_source_kind(original_filename) if file else "link"
     fallback_name = stored_name or source_link.strip()
-    lines = [l.strip() for l in (content_text or "").splitlines() if l.strip()]
-    quick_title = lines[0][:60] if lines else Path(fallback_name).stem
-    quick_summary = "AI 요약 생성 중..."
+    quick_title = Path(original_filename).stem if original_filename else source_link.strip()
 
+    # DB에 최소 정보만 즉시 저장 (file_data 제외 → INSERT 빠름)
     mentor_doc_id = uuid.uuid4().hex[:12]
     mentor_doc = {
         "id": mentor_doc_id,
@@ -252,15 +263,15 @@ async def upload_mentor_knowledge(
         "source_url": source_link.strip() or None,
         "source_kind": source_kind,
         "digest_title": quick_title,
-        "digest_summary": quick_summary,
+        "digest_summary": "AI 요약 생성 중...",
         "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
-        "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
-        "file_data": payload if file is not None else None,
+        "chunk_count": 1,
+        "file_data": None,
     }
     store.add_mentor_doc(mentor_doc)
 
-    # AI 다이제스트 + 벡터스토어는 백그라운드
-    bg.add_task(_bg_digest_and_index_knowledge, mentor["id"], mentor_doc_id, content_text, fallback_name)
+    # 무거운 작업 전부 백그라운드: 텍스트 추출 + AI 다이제스트 + file_data 저장 + 벡터스토어
+    bg.add_task(_bg_process_knowledge, mentor["id"], mentor_doc_id, stored_path, original_filename, source_link, fallback_name, payload)
 
     return {"status": "ok", "document": _serialize_mentor_doc(mentor_doc)}
 
@@ -335,11 +346,16 @@ async def list_mentor_basic(token: str = "", q: str = "", scope: str = "all", li
     return [_serialize_basic_doc(doc) for doc in docs[:limit]]
 
 
-async def _bg_digest_and_index_basic(mentor_id: str, doc_id: str, content_text: str, fallback_name: str):
-    """백그라운드: 기초 자료 AI 다이제스트 → DB 업데이트 → 벡터스토어."""
+async def _bg_process_basic(mentor_id: str, doc_id: str, stored_path: Path | None, original_filename: str, source_link: str, fallback_name: str, payload: bytes | None):
+    """백그라운드: 기초 자료 — 텍스트 추출 → AI 다이제스트 → DB 업데이트 (file_data 포함) → 벡터스토어."""
     try:
+        content_text = _extract_text(stored_path, original_filename, source_link)
         digest_title, digest_summary = await _build_ai_digest(content_text, fallback_name)
-        store.update_mentor_basic_doc(doc_id, {"digest_title": digest_title, "digest_summary": digest_summary})
+        updates: dict = {"digest_title": digest_title, "digest_summary": digest_summary,
+                         "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1)}
+        if payload is not None:
+            updates["file_data"] = payload
+        store.update_mentor_basic_doc(doc_id, updates)
         vector_text = f"제목: {digest_title}\n요약: {digest_summary}\n원문: {content_text or digest_title}"
         add_mentor_basic_document_to_vectorstore(
             mentor_id,
@@ -366,23 +382,20 @@ async def upload_mentor_basic(
     stored_name = ""
     payload = None
     stored_path = None
+    original_filename = ""
 
     if file is not None:
         if not file.filename:
             raise HTTPException(400, "파일명 없음")
-        stored_name = f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
+        original_filename = file.filename
+        stored_name = f"{uuid.uuid4().hex[:8]}_{Path(original_filename).name}"
         stored_path = basic_dir / stored_name
         payload = await file.read()
         stored_path.write_bytes(payload)
 
-    content_text, source_kind = _extract_text_and_kind(
-        stored_path, file.filename if file else "", source_link
-    )
-
+    source_kind = _determine_source_kind(original_filename) if file else "link"
     fallback_name = stored_name or source_link.strip()
-    lines = [l.strip() for l in (content_text or "").splitlines() if l.strip()]
-    quick_title = lines[0][:60] if lines else Path(fallback_name).stem
-    quick_summary = "AI 요약 생성 중..."
+    quick_title = Path(original_filename).stem if original_filename else source_link.strip()
 
     doc_id = uuid.uuid4().hex[:12]
     basic_doc = {
@@ -393,14 +406,14 @@ async def upload_mentor_basic(
         "source_url": source_link.strip() or None,
         "source_kind": source_kind,
         "digest_title": quick_title,
-        "digest_summary": quick_summary,
+        "digest_summary": "AI 요약 생성 중...",
         "uploaded_at": datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S"),
-        "chunk_count": max(1, len(content_text) // 600 + 1 if content_text else 1),
-        "file_data": payload if file is not None else None,
+        "chunk_count": 1,
+        "file_data": None,
     }
     store.add_mentor_basic_doc(basic_doc)
 
-    bg.add_task(_bg_digest_and_index_basic, mentor["id"], doc_id, content_text, fallback_name)
+    bg.add_task(_bg_process_basic, mentor["id"], doc_id, stored_path, original_filename, source_link, fallback_name, payload)
 
     return {"status": "ok", "document": _serialize_basic_doc(basic_doc)}
 
