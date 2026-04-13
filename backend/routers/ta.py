@@ -116,10 +116,17 @@ def _sanitize_plan(plan: dict | None) -> dict:
 
 def _weekday_labels(weekdays: list[int]) -> str:
     labels = ["월", "화", "수", "목", "금", "토", "일"]
-    return ", ".join(labels[index] for index in weekdays if 0 <= index < len(labels))
+    names = [labels[index] for index in weekdays if 0 <= index < len(labels)]
+    # 읽기 쉬운 그룹명
+    if set(weekdays) == {0, 1, 2, 3, 4}:
+        return "평일(월~금)"
+    if set(weekdays) == {5, 6}:
+        return "주말(토·일)"
+    return ", ".join(names)
 
 
 def _summarize_plan(plan: dict) -> str:
+    """사용자에게 보여줄 상세 확인 문장 생성."""
     summary_parts = []
     if plan.get("full_day_off_rules"):
         off_labels = []
@@ -386,8 +393,8 @@ mode 필드 결정:
         try:
             raw_plan = await llm_provider.chat_json(prompt, message)
             plan = _sanitize_plan(raw_plan)
-            # LLM이 주말 인덱스를 잘못 매핑하는 경우 보정
-            plan = _fix_weekend_indices(message, plan)
+            # LLM이 요일 인덱스를 잘못 매핑하는 경우 보정
+            plan = _fix_weekday_indices(message, plan)
             return plan
         except Exception:
             pass
@@ -395,23 +402,35 @@ mode 필드 결정:
     return _fallback_schedule_plan(message, target_month)
 
 
-def _fix_weekend_indices(message: str, plan: dict) -> dict:
-    """LLM이 JavaScript식 (0=Sun, 6=Sat) 인덱스를 반환하는 경우 보정."""
+def _fix_weekday_indices(message: str, plan: dict) -> dict:
+    """LLM이 요일 인덱스를 잘못 반환하는 경우 보정."""
     text = (message or "").strip()
-    wants_weekend = any(kw in text for kw in ("주말", "토일", "토요일", "일요일", "weekend"))
-    if not wants_weekend:
-        return plan
 
-    # 주말 관련 요청인데 weekdays 에 5, 6 이 아닌 다른 값(0, 6 등)이 있으면 보정
-    for key in ("full_day_off_rules", "available_rules"):
-        for rule in plan.get(key, []):
-            wds = set(rule.get("weekdays", []))
-            # JS식 {0, 6} (Sun=0, Sat=6) → Python식 {5, 6} (Sat=5, Sun=6)
-            if wds == {0, 6} or wds == {6, 0}:
-                rule["weekdays"] = [5, 6]
-            # JS식 {0} (Sun only) → Python식 {6}
-            elif wds == {0} and "일" in text:
-                rule["weekdays"] = [6]
+    # ── 주말 보정 ──
+    wants_weekend = any(kw in text for kw in ("주말", "토일", "토요일", "일요일", "weekend"))
+    if wants_weekend:
+        for key in ("full_day_off_rules", "available_rules"):
+            for rule in plan.get(key, []):
+                wds = set(rule.get("weekdays", []))
+                # JS식 {0, 6} (Sun=0, Sat=6) → Python식 {5, 6}
+                if wds == {0, 6}:
+                    rule["weekdays"] = [5, 6]
+                elif wds == {0} and "일" in text:
+                    rule["weekdays"] = [6]
+
+    # ── 평일 보정 ──
+    wants_weekday = any(kw in text for kw in ("평일", "월~금", "월-금", "월금"))
+    if wants_weekday:
+        for key in ("available_rules", "partial_unavailable_rules"):
+            for rule in plan.get(key, []):
+                wds = set(rule.get("weekdays", []))
+                # 평일인데 1~2개 요일만 들어있으면 전체 평일로 확장
+                if wds and wds.issubset({0, 1, 2, 3, 4}) and len(wds) < 5:
+                    rule["weekdays"] = [0, 1, 2, 3, 4]
+                # JS식 평일 {1,2,3,4,5} → Python식 {0,1,2,3,4}
+                if wds == {1, 2, 3, 4, 5}:
+                    rule["weekdays"] = [0, 1, 2, 3, 4]
+
     return plan
 
 
@@ -624,7 +643,7 @@ async def ta_schedule_assistant(req: ScheduleAssistantRequest):
         if req.manual_plan
         else await _parse_schedule_plan(req.target_month, req.message)
     )
-    summary = (plan.get("summary") or "").strip() or _summarize_plan(plan)
+    summary = _summarize_plan(plan)
 
     response = {
         "status": "preview",
