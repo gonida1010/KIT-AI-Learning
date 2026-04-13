@@ -286,10 +286,17 @@ async def _parse_schedule_plan(target_month: str, message: str) -> dict:
 당신은 조교 월간 스케줄 설정 비서입니다.
 선택한 월({target_month})에 대해서만 이해하고, 조교의 자연어 지시를 월간 시간표 규칙으로 변환하세요.
 
+[핵심 원칙]
+- 사용자가 언급하지 않은 기존 스케줄은 절대 건드리지 마세요.
+- 사용자가 말한 요일/날짜에 대한 규칙만 출력하세요.
+- "추가해줘", "넣어줘" 등은 기존 스케줄을 유지하면서 해당 규칙만 추가하라는 뜻입니다.
+- "주말 휴무 추가해줘"  → 토·일만 휴무 추가, 평일 스케줄은 건드리지 않음
+- "평일 09~16시" → 평일만 설정, 주말 스케줄은 건드리지 않음
+
 mode 필드 결정:
 - 사용자가 특정 날짜(예: 17일, 3일, 7월 20일 등)를 언급하면 mode: "date_override" 를 사용하세요.
-  이 모드에서는 해당 날짜만 변경하고 나머지 기존 스케줄은 유지됩니다.
-- 사용자가 월 전체 패턴(요일별 규칙)을 설정하면 mode: "full" 을 사용하세요.
+- 그 외에는 mode: "full" 을 사용하세요.
+- 어떤 mode 든 사용자가 언급한 요일/날짜 규칙만 출력하세요. 언급 안 된 요일은 규칙에 넣지 마세요.
 
 반드시 아래 JSON 형식으로만 답변하세요:
 {{
@@ -324,7 +331,8 @@ mode 필드 결정:
 - "예약 가능"은 available_rules 에 넣으세요.
 - "점심시간", "휴식", "불가 시간"은 partial_unavailable_rules 에 넣으세요.
 - 시간은 HH:MM 형식으로만 출력하세요.
-- 사용자가 말하지 않은 규칙은 만들지 마세요.
+- 사용자가 말하지 않은 요일/날짜에 대한 규칙은 절대 만들지 마세요.
+- 주말만 언급하면 주말 규칙만, 평일만 언급하면 평일 규칙만 출력하세요.
 - summary 는 1문장으로 짧게 작성하세요.
 
 특정 날짜 규칙 (date_override 모드):
@@ -449,16 +457,27 @@ def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict
 
     override_dates = _collect_override_dates(plan) if mode == "date_override" else set()
 
-    if mode == "date_override" and override_dates:
-        removed_count = 0
-        for d in override_dates:
-            removed_count += store.clear_unbooked_ta_slots(ta_id, d, d)
-    else:
-        removed_count = store.clear_unbooked_ta_slots(
-            ta_id,
-            start.strftime("%Y-%m-%d"),
-            end.strftime("%Y-%m-%d"),
+    # ── 규칙에 해당하는 날짜만 수집 (언급 안 된 날은 건드리지 않음) ──
+    affected_dates: set[str] = set()
+    cursor = start
+    while cursor <= end:
+        date_str = cursor.strftime("%Y-%m-%d")
+        matches_any = (
+            any(_matches_rule(cursor, r) for r in plan.get("full_day_off_rules", []))
+            or any(_matches_rule(cursor, r) for r in plan.get("available_rules", []))
+            or any(_matches_rule(cursor, r) for r in plan.get("partial_unavailable_rules", []))
         )
+        if matches_any:
+            affected_dates.add(date_str)
+        cursor += timedelta(days=1)
+
+    if mode == "date_override" and override_dates:
+        affected_dates = override_dates
+
+    # 해당 날짜의 기존 미예약 슬롯만 삭제
+    removed_count = 0
+    for d in sorted(affected_dates):
+        removed_count += store.clear_unbooked_ta_slots(ta_id, d, d)
 
     created_slots: list[dict] = []
     preserved_booked_count = 0
@@ -467,7 +486,8 @@ def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict
     while cursor <= end:
         date_str = cursor.strftime("%Y-%m-%d")
 
-        if mode == "date_override" and date_str not in override_dates:
+        # 규칙에 해당하지 않는 날짜는 건드리지 않음
+        if date_str not in affected_dates:
             cursor += timedelta(days=1)
             continue
 
