@@ -306,8 +306,20 @@ mode 필드 결정:
   ]
 }}
 
+[중요] 요일 인덱스 (Python weekday 기준, 절대 바꾸지 마세요):
+  0 = 월요일 (Monday)
+  1 = 화요일 (Tuesday)
+  2 = 수요일 (Wednesday)
+  3 = 목요일 (Thursday)
+  4 = 금요일 (Friday)
+  5 = 토요일 (Saturday)  ← 주말
+  6 = 일요일 (Sunday)    ← 주말
+
+- 주말 = 토요일(5) + 일요일(6) → weekdays: [5, 6]
+- 평일 = 월~금 → weekdays: [0, 1, 2, 3, 4]
+- JavaScript 의 0=일요일 기준이 아닙니다! 반드시 위 표를 따르세요.
+
 규칙:
-- 요일 인덱스는 0=월, 1=화, ..., 6=일 입니다.
 - "휴무"는 full_day_off_rules 에 넣으세요.
 - "예약 가능"은 available_rules 에 넣으세요.
 - "점심시간", "휴식", "불가 시간"은 partial_unavailable_rules 에 넣으세요.
@@ -321,7 +333,17 @@ mode 필드 결정:
 - "20일 10시~14시 가능"이라면 available_rules의 dates에 "{target_month}-20"을 넣으세요.
 - date_override 모드에서는 weekdays는 빈 배열 []로 두세요.
 
-예시 1 — 월 전체 패턴:
+예시 1 — 주말 휴무:
+입력: "주말 휴무" 또는 "주말에 모두 휴무 추가해줘"
+{{
+  "mode": "full",
+  "summary": "토·일(주말) 휴무",
+  "available_rules": [],
+  "full_day_off_rules": [{{"weekdays": [5,6], "dates": [], "start_time": "09:00", "end_time": "22:00"}}],
+  "partial_unavailable_rules": []
+}}
+
+예시 2 — 월 전체 패턴:
 입력: "토일 휴무, 평일은 09시~16시"
 {{
   "mode": "full",
@@ -331,7 +353,7 @@ mode 필드 결정:
   "partial_unavailable_rules": []
 }}
 
-예시 2 — 특정 날짜 변경:
+예시 3 — 특정 날짜 변경:
 입력: "17일 휴무"
 {{
   "mode": "date_override",
@@ -341,7 +363,7 @@ mode 필드 결정:
   "partial_unavailable_rules": []
 }}
 
-예시 3 — 특정 날짜 가능 시간 변경:
+예시 4 — 특정 날짜 가능 시간 변경:
 입력: "3일은 10시부터 14시까지만 가능"
 {{
   "mode": "date_override",
@@ -355,11 +377,34 @@ mode 필드 결정:
     if llm_provider:
         try:
             raw_plan = await llm_provider.chat_json(prompt, message)
-            return _sanitize_plan(raw_plan)
+            plan = _sanitize_plan(raw_plan)
+            # LLM이 주말 인덱스를 잘못 매핑하는 경우 보정
+            plan = _fix_weekend_indices(message, plan)
+            return plan
         except Exception:
             pass
 
     return _fallback_schedule_plan(message, target_month)
+
+
+def _fix_weekend_indices(message: str, plan: dict) -> dict:
+    """LLM이 JavaScript식 (0=Sun, 6=Sat) 인덱스를 반환하는 경우 보정."""
+    text = (message or "").strip()
+    wants_weekend = any(kw in text for kw in ("주말", "토일", "토요일", "일요일", "weekend"))
+    if not wants_weekend:
+        return plan
+
+    # 주말 관련 요청인데 weekdays 에 5, 6 이 아닌 다른 값(0, 6 등)이 있으면 보정
+    for key in ("full_day_off_rules", "available_rules"):
+        for rule in plan.get(key, []):
+            wds = set(rule.get("weekdays", []))
+            # JS식 {0, 6} (Sun=0, Sat=6) → Python식 {5, 6} (Sat=5, Sun=6)
+            if wds == {0, 6} or wds == {6, 0}:
+                rule["weekdays"] = [5, 6]
+            # JS식 {0} (Sun only) → Python식 {6}
+            elif wds == {0} and "일" in text:
+                rule["weekdays"] = [6]
+    return plan
 
 
 def _matches_rule(target_date: date, rule: dict) -> bool:
