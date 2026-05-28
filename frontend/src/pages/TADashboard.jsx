@@ -388,6 +388,7 @@ function BriefingPanel({ slot }) {
 
 export default function TADashboard() {
   const { user } = useAuth();
+  const token = localStorage.getItem("edu_sync_token");
   const detailSectionRef = useRef(null);
   const today = new Date();
   const todayKey = fmt(today.getFullYear(), today.getMonth(), today.getDate());
@@ -426,13 +427,15 @@ export default function TADashboard() {
   }, []);
 
   const fetchSlots = useCallback(async () => {
-    const res = await fetch("/api/ta/slots").catch(() => null);
+    const res = await fetch(
+      `/api/ta/slots?token=${encodeURIComponent(token || "")}`,
+    ).catch(() => null);
     if (!res?.ok) {
       setMessage("스케줄을 불러오지 못했습니다.", "error");
       return;
     }
     setSlots(await res.json());
-  }, [setMessage]);
+  }, [setMessage, token]);
 
   useEffect(() => {
     fetchSlots();
@@ -507,7 +510,9 @@ export default function TADashboard() {
   ) => {
     if (!user?.id || loadingAssistant) return null;
     setLoadingAssistant(true);
-    const res = await fetch("/api/ta/schedule-assistant", {
+    const res = await fetch(
+      `/api/ta/schedule-assistant?token=${encodeURIComponent(token || "")}`,
+      {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -518,7 +523,8 @@ export default function TADashboard() {
         manual_plan: manualPlan,
         apply: false,
       }),
-    }).catch(() => null);
+      },
+    ).catch(() => null);
     setLoadingAssistant(false);
 
     if (!res?.ok) {
@@ -534,7 +540,9 @@ export default function TADashboard() {
     if (!user?.id || loadingAssistant) return;
 
     setLoadingAssistant(true);
-    const res = await fetch("/api/ta/schedule-assistant", {
+    const res = await fetch(
+      `/api/ta/schedule-assistant?token=${encodeURIComponent(token || "")}`,
+      {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -545,7 +553,8 @@ export default function TADashboard() {
         manual_plan: manualPlan,
         apply: true,
       }),
-    }).catch(() => null);
+      },
+    ).catch(() => null);
     setLoadingAssistant(false);
 
     if (!res?.ok) {

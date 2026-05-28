@@ -23,6 +23,14 @@ CURATION_SCHEDULE = {
     4: "개발트렌드",
 }
 
+_MENTOR_MATERIAL_QUERY_HINTS = (
+    "자료", "문서", "파일", "교재", "강의", "학습 팁", "학습팁", "링크", "원문", "다운로드",
+)
+_CURATION_QUERY_HINTS = (
+    "큐레이션", "채용", "취업", "뉴스", "소식", "자격증", "공모전", "해커톤",
+    "개발트렌드", "개발 트렌드", "채용공고", "채용 공고", "AI타임스",
+)
+
 AGENT_A_PROMPT = """\
 당신은 국비지원(KDT) 코딩 학원의 'Agent A — 행정 및 커리어 멘토'입니다.
 학원 관련 행정, 취업, 자격증, 공모전, 학원 규정 질문에 답변합니다.
@@ -43,6 +51,8 @@ AGENT_A_PROMPT = """\
    놓친 자료 요청 시 해당 날짜·주제를 명확히 알려주세요.
 4. 감정적 상담이 필요해 보이면 멘토 상담을 안내하세요.
 5. 답변은 간결하면서도 유용하게 작성하세요.
+6. 멘토 자료가 질문에 직접 도움이 되는 경우에만 언급하고 mentor_doc_refs에 해당 자료 ID를 넣으세요.
+   관련 없는 인사말이나 일반 질문에는 멘토 자료를 노출하지 말고 빈 배열을 반환하세요.
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {{
@@ -87,7 +97,7 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
         mentor_doc.setdefault("source_excerpt", result.get("source_excerpt") or "")
         latest_docs.append(mentor_doc)
         lines.append(
-            f"[최신자료: {mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}]\n"
+            f"[최신자료 ID: {doc_id}] {mentor_doc.get('digest_title', mentor_doc.get('filename', '자료'))}\n"
             f"요약: {mentor_doc.get('digest_summary', '')}\n"
             f"원문 발췌: {mentor_doc.get('source_excerpt') or result.get('content', '')[:400]}"
         )
@@ -107,37 +117,10 @@ def _search_mentor_materials(user_id: str | None, message: str) -> tuple[str, li
         basic_doc.setdefault("source_excerpt", result.get("source_excerpt") or "")
         basic_docs.append(basic_doc)
         lines.append(
-            f"[기초자료: {basic_doc.get('digest_title', basic_doc.get('filename', '자료'))}]\n"
+            f"[기초자료 ID: {doc_id}] {basic_doc.get('digest_title', basic_doc.get('filename', '자료'))}\n"
             f"요약: {basic_doc.get('digest_summary', '')}\n"
             f"원문 발췌: {basic_doc.get('source_excerpt') or result.get('content', '')[:400]}"
         )
-
-    # 벡터 검색 결과가 없으면 DB에서 직접 최신 자료 fallback
-    if not latest_docs:
-        db_docs = store.get_mentor_docs(mentor_id)[:3]
-        for doc in db_docs:
-            doc_id = doc.get("id", "")
-            if doc_id not in seen_ids:
-                seen_ids.add(doc_id)
-                latest_docs.append(doc)
-                lines.append(
-                    f"[최신자료: {doc.get('digest_title', doc.get('filename', '자료'))}]\n"
-                    f"요약: {doc.get('digest_summary', '')}\n"
-                    f"원문 발췌: {doc.get('source_excerpt', '')}"
-                )
-
-    if not basic_docs:
-        db_basics = store.get_mentor_basic_docs(mentor_id)[:3]
-        for doc in db_basics:
-            doc_id = doc.get("id", "")
-            if doc_id not in basic_seen:
-                basic_seen.add(doc_id)
-                basic_docs.append(doc)
-                lines.append(
-                    f"[기초자료: {doc.get('digest_title', doc.get('filename', '자료'))}]\n"
-                    f"요약: {doc.get('digest_summary', '')}\n"
-                    f"원문 발췌: {doc.get('source_excerpt', '')}"
-                )
 
     ctx = "\n\n".join(lines) if lines else "(유사한 멘토 전용 자료 없음)"
     return ctx, latest_docs, basic_docs
@@ -253,8 +236,22 @@ async def handle_agent_a(
         docs = retriever.invoke(message[:800])
         rag_ctx = "\n\n".join(d.page_content for d in docs)
 
-    curation_ctx, curation_matched = await _search_curations_semantic(message, llm)
-    mentor_material_ctx, mentor_materials, basic_materials = _search_mentor_materials(user_id, message)
+    should_search_curations = any(hint in message for hint in _CURATION_QUERY_HINTS)
+    if should_search_curations:
+        curation_ctx, curation_matched = await _search_curations_semantic(message, llm)
+    else:
+        curation_ctx, curation_matched = "(큐레이션 요청이 없습니다.)", []
+    should_search_materials = any(hint in message for hint in _MENTOR_MATERIAL_QUERY_HINTS)
+    if should_search_materials:
+        mentor_material_ctx, mentor_materials, basic_materials = _search_mentor_materials(
+            user_id, message
+        )
+    else:
+        mentor_material_ctx, mentor_materials, basic_materials = (
+            "(학생이 멘토 자료를 요청하지 않았습니다.)",
+            [],
+            [],
+        )
 
     prompt = AGENT_A_PROMPT.format(
         context=rag_ctx
@@ -301,7 +298,9 @@ async def handle_agent_a(
             for it in curation_matched[:5]
         ]
 
-    if mentor_materials:
+    selected_material_ids = set(result.get("mentor_doc_refs") or [])
+
+    if mentor_materials and selected_material_ids:
         result["related_materials"] = [
             {
                 "id": doc["id"],
@@ -317,9 +316,10 @@ async def handle_agent_a(
                 "doc_type": "latest",
             }
             for doc in mentor_materials[:3]
+            if doc["id"] in selected_material_ids
         ]
 
-    if basic_materials:
+    if basic_materials and selected_material_ids:
         basics = [
             {
                 "id": doc["id"],
@@ -335,7 +335,9 @@ async def handle_agent_a(
                 "doc_type": "basic",
             }
             for doc in basic_materials[:3]
+            if doc["id"] in selected_material_ids
         ]
-        result.setdefault("related_materials", []).extend(basics)
+        if basics:
+            result.setdefault("related_materials", []).extend(basics)
 
     return result

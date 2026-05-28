@@ -98,6 +98,7 @@ function isPastDate(dateString) {
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const token = localStorage.getItem("edu_sync_token");
   const today = new Date();
   const [items, setItems] = useState([]);
   const [category, setCategory] = useState("채용정보");
@@ -150,6 +151,7 @@ export default function AdminDashboard() {
     formData.append("file", file);
     formData.append("category", category);
     formData.append("date", selectedDate);
+    formData.append("token", token || "");
 
     try {
       const res = await fetch("/api/curation/upload", {
@@ -184,6 +186,7 @@ export default function AdminDashboard() {
     formData.append("category", category);
     formData.append("date", selectedDate);
     formData.append("source_link", linkValue.trim());
+    formData.append("token", token || "");
     try {
       const res = await fetch("/api/curation/upload", {
         method: "POST",
@@ -204,11 +207,14 @@ export default function AdminDashboard() {
   };
 
   const updateItem = async (itemId) => {
-    const res = await fetch(`/api/curation/items/${itemId}`, {
+    const res = await fetch(
+      `/api/curation/items/${itemId}?token=${encodeURIComponent(token || "")}`,
+      {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ category: editingCategory, date: editingDate }),
-    }).catch(() => null);
+      },
+    ).catch(() => null);
     if (res?.ok) {
       const updatedDate = editingDate;
       const updatedCategory = editingCategory;
@@ -231,9 +237,10 @@ export default function AdminDashboard() {
   };
 
   const deleteItem = async (itemId) => {
-    const res = await fetch(`/api/curation/items/${itemId}`, {
-      method: "DELETE",
-    }).catch(() => null);
+    const res = await fetch(
+      `/api/curation/items/${itemId}?token=${encodeURIComponent(token || "")}`,
+      { method: "DELETE" },
+    ).catch(() => null);
     if (!res?.ok) {
       setError("삭제에 실패했습니다.");
       return;

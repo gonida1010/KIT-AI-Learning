@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from db.store import store
 from models.schemas import BookingRequest, TASlot
+from services.access_control import require_role
 
 router = APIRouter(prefix="/api/ta", tags=["ta"])
 
@@ -562,7 +563,8 @@ def _apply_schedule_plan(ta_id: str, ta_name: str, target_month: str, plan: dict
 
 
 @router.get("/slots")
-async def get_slots():
+async def get_slots(token: str = ""):
+    require_role(token, "ta")
     return store.get_all_slots()
 
 
@@ -572,7 +574,8 @@ async def get_available():
 
 
 @router.post("/book")
-async def book_slot(req: BookingRequest):
+async def book_slot(req: BookingRequest, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     from main import llm_provider
     from services.agent_b import generate_briefing_report, normalize_booking_request
 
@@ -624,12 +627,14 @@ async def book_slot(req: BookingRequest):
 
 
 @router.get("/briefings")
-async def get_briefings():
+async def get_briefings(token: str = ""):
+    require_role(token, "ta")
     return [slot for slot in store.get_booked_slots() if slot.get("briefing_report")]
 
 
 @router.post("/schedule-assistant")
-async def ta_schedule_assistant(req: ScheduleAssistantRequest):
+async def ta_schedule_assistant(req: ScheduleAssistantRequest, token: str = ""):
+    require_role(token, "ta", allow_demo=not req.apply)
     if not req.message.strip() and not req.manual_plan:
         raise HTTPException(400, "설정 내용을 입력해 주세요.")
 
@@ -666,7 +671,8 @@ async def ta_schedule_assistant(req: ScheduleAssistantRequest):
 
 
 @router.post("/slots")
-async def add_slot(slot: TASlot):
+async def add_slot(slot: TASlot, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     data = slot.model_dump()
     data["id"] = _uid()
     store.add_ta_slot(data)
@@ -674,7 +680,8 @@ async def add_slot(slot: TASlot):
 
 
 @router.post("/slots/recurring")
-async def add_recurring_slots(req: RecurringSlotRequest):
+async def add_recurring_slots(req: RecurringSlotRequest, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     created = []
     today = datetime.now().date()
     monday = today - timedelta(days=today.weekday())
@@ -717,7 +724,8 @@ async def add_recurring_slots(req: RecurringSlotRequest):
 
 
 @router.post("/slots/bulk")
-async def add_bulk_slots(req: BulkSlotRequest):
+async def add_bulk_slots(req: BulkSlotRequest, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     start = datetime.strptime(req.start_date, "%Y-%m-%d").date()
     end = datetime.strptime(req.end_date, "%Y-%m-%d").date()
     if end < start:
@@ -761,7 +769,8 @@ async def add_bulk_slots(req: BulkSlotRequest):
 
 
 @router.post("/slots/base-template")
-async def add_base_template_slots(req: BaseScheduleRequest):
+async def add_base_template_slots(req: BaseScheduleRequest, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     start = datetime.strptime(req.start_date, "%Y-%m-%d").date()
     end = datetime.strptime(req.end_date, "%Y-%m-%d").date()
     if end < start:
@@ -809,7 +818,8 @@ async def add_base_template_slots(req: BaseScheduleRequest):
 
 
 @router.delete("/slots/{slot_id}")
-async def delete_slot(slot_id: str):
+async def delete_slot(slot_id: str, token: str = ""):
+    require_role(token, "ta", allow_demo=False)
     # 먼저 슬롯 조회
     slot = next((s for s in store.get_all_slots() if s["id"] == slot_id), None)
     if not slot:

@@ -68,6 +68,11 @@ function CurationCard({ item }) {
 
 function MentorDocCard({ doc }) {
   const isLink = doc.source_kind === "link";
+  const token = localStorage.getItem("edu_sync_token");
+  const attachmentUrl =
+    doc.attachment_url && !isLink
+      ? `${doc.attachment_url}?token=${encodeURIComponent(token || "")}`
+      : doc.attachment_url;
   return (
     <div className="mt-2 p-3 bg-[#f7f7f7] border border-[#e5e5e5] rounded-lg">
       <div className="flex items-center gap-2 mb-1">
@@ -82,10 +87,10 @@ function MentorDocCard({ doc }) {
           {doc.summary || doc.digest_summary}
         </p>
       )}
-      {doc.attachment_url && (
+      {attachmentUrl && (
         <div className="flex items-center gap-3 mt-2">
           <a
-            href={doc.attachment_url}
+            href={attachmentUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-[#4A90D9] hover:text-[#3570B0] font-medium"
@@ -94,7 +99,7 @@ function MentorDocCard({ doc }) {
           </a>
           {!isLink && (
             <a
-              href={doc.attachment_url}
+              href={attachmentUrl}
               download
               className="inline-flex items-center gap-1 text-xs text-[#4A90D9] hover:text-[#3570B0] font-medium"
             >

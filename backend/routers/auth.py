@@ -223,8 +223,9 @@ async def update_role(token: str = "", role: str = ""):
     user = store.get_user(user_id)
     if not user:
         raise HTTPException(404, "사용자 없음")
-    store.update_user(user_id, {"role": role})
-    return {"status": "ok", "role": role}
+    if role != user["role"]:
+        raise HTTPException(403, "역할 변경은 허용되지 않습니다.")
+    return {"status": "ok", "role": user["role"]}
 
 
 @router.post("/logout")

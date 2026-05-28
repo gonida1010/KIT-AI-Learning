@@ -118,6 +118,11 @@ class Store:
             row = db.get(Session, token)
             return row.user_id if row else None
 
+    def get_session_type(self, token: str) -> str | None:
+        with self._session() as db:
+            row = db.get(Session, token)
+            return row.type if row else None
+
     def delete_session(self, token: str):
         with self._session() as db:
             row = db.get(Session, token)

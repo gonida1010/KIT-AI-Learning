@@ -34,6 +34,19 @@ class ChatRequest(BaseModel):
 
 class HandoffWebRequest(BaseModel):
     student_id: str
+    token: str | None = None
+
+
+def _require_student(token: str | None) -> str:
+    if not token:
+        raise HTTPException(401, "인증 필요")
+    user_id = store.get_session(token)
+    user = store.get_user(user_id) if user_id else None
+    if not user:
+        raise HTTPException(401, "유효하지 않은 세션")
+    if user.get("role") != "student":
+        raise HTTPException(403, "수강생 권한 필요")
+    return user_id
 
 
 @router.post("")
@@ -46,22 +59,7 @@ async def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(400, "메시지를 입력해 주세요.")
 
-    # 토큰 → student_id 해소
-    sid = req.student_id
-    if not sid and req.token:
-        sid = store.get_session(req.token)
-    if not sid:
-        sid = "student_001"
-
-    # 학생 자동 등록
-    if not store.get_user(sid):
-        store.create_user({
-            "id": sid, "kakao_id": None,
-            "name": f"웹 유저 ({sid[:8]})",
-            "profile_image": "", "role": "student",
-            "mentor_id": None, "invite_code": None,
-            "career_pref": None, "created_at": _now(),
-        })
+    sid = _require_student(req.token)
 
     # 사용자 메시지 저장
     user_msg = {
@@ -142,7 +140,9 @@ async def chat(req: ChatRequest):
 
 
 @router.get("/history/{student_id}")
-async def chat_history(student_id: str):
+async def chat_history(student_id: str, token: str = ""):
+    if _require_student(token) != student_id:
+        raise HTTPException(403, "본인의 대화만 조회할 수 있습니다.")
     return store.get_conversation(student_id)
 
 
@@ -155,11 +155,7 @@ class TipsRequest(BaseModel):
 @router.post("/tips")
 async def learning_tips(req: TipsRequest):
     """학생의 담당 멘토가 올린 자료 반환. type=latest: 최신 자료, type=basic: 기초 자료."""
-    sid = req.student_id
-    if not sid and req.token:
-        sid = store.get_session(req.token)
-    if not sid:
-        sid = "student_001"
+    sid = _require_student(req.token)
 
     student = store.get_user(sid)
     mentor_id = student.get("mentor_id") if student else None
@@ -241,11 +237,7 @@ async def booking_confirm(req: BookingConfirmRequest):
     from main import llm_provider
     from services.agent_b import generate_briefing_report, normalize_booking_request
 
-    sid = req.student_id
-    if not sid and req.token:
-        sid = store.get_session(req.token)
-    if not sid:
-        sid = "student_001"
+    sid = _require_student(req.token)
 
     student = store.get_user(sid) or {}
     student_name = student.get("name", "웹 유저")
@@ -297,11 +289,9 @@ class BookingCancelRequest(BaseModel):
 @router.get("/booking/my")
 async def my_bookings(token: str = "", student_id: str = ""):
     """학생 본인의 예약 목록 반환."""
-    sid = student_id
-    if not sid and token:
-        sid = store.get_session(token)
-    if not sid:
-        return []
+    sid = _require_student(token)
+    if student_id and student_id != sid:
+        raise HTTPException(403, "본인의 예약만 조회할 수 있습니다.")
     slots = store.get_booked_slots_by_student(sid)
     return [
         {
@@ -319,11 +309,9 @@ async def my_bookings(token: str = "", student_id: str = ""):
 @router.post("/booking/cancel")
 async def booking_cancel(req: BookingCancelRequest):
     """웹 채팅에서 예약 취소."""
-    sid = req.student_id
-    if not sid and req.token:
-        sid = store.get_session(req.token)
-    if not sid:
-        return {"status": "error", "message": "로그인이 필요합니다."}
+    sid = _require_student(req.token)
+    if req.student_id and req.student_id != sid:
+        raise HTTPException(403, "본인의 예약만 취소할 수 있습니다.")
 
     slot = store.cancel_booking(req.slot_id, sid)
     if not slot:
@@ -344,23 +332,26 @@ async def booking_cancel(req: BookingCancelRequest):
 
 @router.post("/handoff")
 async def request_handoff(req: HandoffWebRequest):
-    student = store.get_user(req.student_id)
+    sid = _require_student(req.token)
+    if req.student_id != sid:
+        raise HTTPException(403, "본인의 상담만 요청할 수 있습니다.")
+    student = store.get_user(sid)
     if not student:
         raise HTTPException(404, "학생을 찾을 수 없습니다.")
-    last_msgs = store.get_conversation(req.student_id)
+    last_msgs = store.get_conversation(sid)
     last_user_msg = ""
     for m in reversed(last_msgs):
         if m.get("role") == "user":
             last_user_msg = m["content"]
             break
     store.add_handoff({
-        "id": _uid(), "student_id": req.student_id,
+        "id": _uid(), "student_id": sid,
         "student_name": student.get("name", ""),
         "reason": "웹 챗봇 멘토 상담 요청",
         "last_message": last_user_msg or "(대화 없음)",
         "priority": "medium", "status": "pending", "created_at": _now(),
     })
-    store.add_event(req.student_id, {
+    store.add_event(sid, {
         "timestamp": _now(), "event_type": "handoff",
         "content": "멘토 상담 요청 (웹)", "detail": last_user_msg[:80],
     })

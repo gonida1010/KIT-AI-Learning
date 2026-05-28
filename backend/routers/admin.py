@@ -3,11 +3,13 @@
 from fastapi import APIRouter
 
 from db.store import store
+from services.access_control import require_role
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/curations")
-async def list_all_curations():
+async def list_all_curations(token: str = ""):
+    require_role(token, "admin")
     items = sorted(store.curation_items, key=lambda x: x.get("date", ""), reverse=True)
     return items

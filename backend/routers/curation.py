@@ -10,6 +10,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from db.store import store
+from services.access_control import require_role
 from services.content_processing import build_ai_digest, extract_source_text
 from services.rag import DATA_DIR, add_curation_to_vectorstore, build_curation_vectorstore
 
@@ -99,8 +100,10 @@ async def upload_curation(
     category: str = Form("기타"),
     date: str = Form(""),
     source_link: str = Form(""),
+    token: str = Form(""),
 ):
     """관리자가 공통 큐레이션 콘텐츠 업로드. 제목/요약은 AI가 정리한다."""
+    require_role(token, "admin", allow_demo=False)
     if file is None and not source_link.strip():
         raise HTTPException(400, "파일 또는 링크가 필요합니다.")
 
@@ -175,7 +178,8 @@ async def open_curation_asset(item_id: str):
 
 
 @router.delete("/items/{item_id}")
-async def delete_curation(item_id: str):
+async def delete_curation(item_id: str, token: str = ""):
+    require_role(token, "admin", allow_demo=False)
     item = store.get_curation_by_id(item_id)
     if not item:
         raise HTTPException(404, "항목 없음")
@@ -191,7 +195,8 @@ async def delete_curation(item_id: str):
 
 
 @router.put("/items/{item_id}")
-async def update_curation(item_id: str, req: UpdateCurationRequest):
+async def update_curation(item_id: str, req: UpdateCurationRequest, token: str = ""):
+    require_role(token, "admin", allow_demo=False)
     if _find_curation_by_date(req.date, exclude_item_id=item_id):
         raise HTTPException(400, "해당 날짜에는 이미 다른 큐레이션 자료가 있습니다. 기존 자료를 삭제하거나 다른 날짜를 선택해 주세요.")
 

@@ -7,13 +7,19 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from db.store import store
+from services.access_control import require_role
 from services.rag import load_pdf_documents, build_vectorstore, add_documents_to_vectorstore, DATA_DIR
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...), doc_type: str = Form("기타")):
+async def upload_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form("기타"),
+    token: str = Form(""),
+):
+    require_role(token, "admin", allow_demo=False)
     from main import vectorstore, retriever
     import main
 
@@ -62,14 +68,16 @@ async def list_documents():
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str):
+async def delete_document(doc_id: str, token: str = ""):
+    require_role(token, "admin", allow_demo=False)
     if store.remove_knowledge_doc(doc_id):
         return {"status": "ok"}
     raise HTTPException(404, "문서 없음")
 
 
 @router.post("/rebuild")
-async def rebuild_index():
+async def rebuild_index(token: str = ""):
+    require_role(token, "admin", allow_demo=False)
     import main
 
     pdf_docs = load_pdf_documents()

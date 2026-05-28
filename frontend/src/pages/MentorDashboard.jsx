@@ -112,6 +112,11 @@ function CurationItem({ item }) {
 }
 
 function RecentDocItem({ doc, onDelete }) {
+  const token = localStorage.getItem("edu_sync_token");
+  const attachmentUrl =
+    doc.source_kind === "link"
+      ? doc.attachment_url
+      : `${doc.attachment_url}?token=${encodeURIComponent(token || "")}`;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -125,7 +130,7 @@ function RecentDocItem({ doc, onDelete }) {
         </div>
         <div className="flex shrink-0 gap-1">
           <a
-            href={doc.attachment_url}
+            href={attachmentUrl}
             target="_blank"
             rel="noreferrer"
             className="rounded-lg border border-slate-200 p-2 text-slate-500 transition-colors hover:border-primary-300 hover:text-primary-600"

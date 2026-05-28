@@ -56,7 +56,9 @@ export default function MentorStudents({ isActive = true }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/mentor/students/by-mentor/${user.id}`)
+      fetch(
+        `/api/mentor/students/by-mentor/${user.id}?token=${encodeURIComponent(token || "")}`,
+      )
         .then((res) => (res.ok ? res.json() : []))
         .catch(() => []),
       fetch(`/api/mentor/dashboard?token=${encodeURIComponent(token || "")}`)
@@ -72,7 +74,9 @@ export default function MentorStudents({ isActive = true }) {
     if (!isActive) return;
 
     Promise.all([
-      fetch(`/api/mentor/students/by-mentor/${user.id}`)
+      fetch(
+        `/api/mentor/students/by-mentor/${user.id}?token=${encodeURIComponent(token || "")}`,
+      )
         .then((res) => (res.ok ? res.json() : []))
         .catch(() => []),
       fetch(`/api/mentor/dashboard?token=${encodeURIComponent(token || "")}`)
@@ -98,7 +102,7 @@ export default function MentorStudents({ isActive = true }) {
     }
 
     if (student.has_handoff) {
-      fetch(`/api/mentor/handoff/dismiss/${student.id}`, {
+      fetch(`/api/mentor/handoff/dismiss/${student.id}?token=${encodeURIComponent(token || "")}`, {
         method: "POST",
       }).catch(() => {});
       setStudents((prev) =>
@@ -109,7 +113,9 @@ export default function MentorStudents({ isActive = true }) {
     }
 
     try {
-      const res = await fetch(`/api/mentor/student/${student.id}/timeline`);
+      const res = await fetch(
+        `/api/mentor/student/${student.id}/timeline?token=${encodeURIComponent(token || "")}`,
+      );
       const data = await res.json();
       const events = data.events || [];
       setTimeline(events);

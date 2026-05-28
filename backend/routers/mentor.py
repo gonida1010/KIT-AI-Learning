@@ -44,6 +44,28 @@ def _require_mentor(token: str) -> dict:
     return user
 
 
+def _require_mentor_write(token: str) -> dict:
+    mentor = _require_mentor(token)
+    if store.get_session_type(token) == "demo":
+        raise HTTPException(403, "데모 계정에서는 관리 데이터를 변경할 수 없습니다.")
+    return mentor
+
+
+def _require_doc_access(token: str, mentor_id: str) -> None:
+    if not token:
+        raise HTTPException(401, "인증 필요")
+    user_id = store.get_session(token)
+    user = store.get_user(user_id) if user_id else None
+    if not user:
+        raise HTTPException(401, "유효하지 않은 세션")
+    is_owner = user.get("role") == "mentor" and user["id"] == mentor_id
+    is_assigned_student = (
+        user.get("role") == "student" and user.get("mentor_id") == mentor_id
+    )
+    if not is_owner and not is_assigned_student:
+        raise HTTPException(403, "자료 열람 권한 필요")
+
+
 def _doc_is_stale(uploaded_at: str) -> bool:
     if not uploaded_at:
         return False
@@ -113,7 +135,10 @@ async def mentor_dashboard(token: str = ""):
 
 
 @router.get("/students/by-mentor/{mentor_id}")
-async def list_students_by_mentor(mentor_id: str):
+async def list_students_by_mentor(mentor_id: str, token: str = ""):
+    mentor = _require_mentor(token)
+    if mentor["id"] != mentor_id:
+        raise HTTPException(403, "담당 멘토 권한 필요")
     students = store.get_students_by_mentor(mentor_id)
     pending = store.get_pending_handoffs()
     pending_ids = {h["student_id"] for h in pending}
@@ -123,16 +148,23 @@ async def list_students_by_mentor(mentor_id: str):
 
 
 @router.post("/handoff/dismiss/{student_id}")
-async def dismiss_handoff(student_id: str):
+async def dismiss_handoff(student_id: str, token: str = ""):
+    mentor = _require_mentor_write(token)
+    student = store.get_user(student_id)
+    if not student or student.get("mentor_id") != mentor["id"]:
+        raise HTTPException(403, "담당 수강생만 처리할 수 있습니다.")
     count = store.resolve_handoffs_by_student(student_id)
     return {"resolved": count}
 
 
 @router.get("/student/{student_id}/timeline")
-async def student_timeline(student_id: str):
+async def student_timeline(student_id: str, token: str = ""):
+    mentor = _require_mentor(token)
     student = store.get_user(student_id)
     if not student:
         raise HTTPException(404, "학생 없음")
+    if student.get("mentor_id") != mentor["id"]:
+        raise HTTPException(403, "담당 수강생만 조회할 수 있습니다.")
     events = store.get_student_events(student_id)
     keywords = [e["content"] for e in events if e["event_type"] == "search"]
     return StudentProfile(
@@ -199,7 +231,7 @@ async def upload_mentor_knowledge(
     file: UploadFile | None = File(default=None),
     source_link: str = Form(""),
 ):
-    mentor = _require_mentor(token)
+    mentor = _require_mentor_write(token)
     if file is None and not source_link.strip():
         raise HTTPException(400, "파일 또는 링크가 필요합니다.")
 
@@ -251,7 +283,7 @@ async def upload_mentor_knowledge(
 
 @router.delete("/knowledge/{doc_id}")
 async def delete_mentor_knowledge(doc_id: str, token: str = ""):
-    mentor = _require_mentor(token)
+    mentor = _require_mentor_write(token)
     removed = store.remove_mentor_doc(mentor["id"], doc_id)
     if not removed:
         raise HTTPException(404, "문서 없음")
@@ -288,10 +320,11 @@ async def delete_mentor_knowledge(doc_id: str, token: str = ""):
 
 
 @router.get("/knowledge/assets/{doc_id}")
-async def open_mentor_asset(doc_id: str):
+async def open_mentor_asset(doc_id: str, token: str = ""):
     doc = store.get_mentor_doc(doc_id)
     if not doc:
         raise HTTPException(404, "문서 없음")
+    _require_doc_access(token, doc["mentor_id"])
 
     if doc.get("source_kind") == "link" and doc.get("source_url"):
         return RedirectResponse(doc["source_url"])
@@ -361,7 +394,7 @@ async def upload_mentor_basic(
     file: UploadFile | None = File(default=None),
     source_link: str = Form(""),
 ):
-    mentor = _require_mentor(token)
+    mentor = _require_mentor_write(token)
     if file is None and not source_link.strip():
         raise HTTPException(400, "파일 또는 링크가 필요합니다.")
 
@@ -410,7 +443,7 @@ async def upload_mentor_basic(
 
 @router.delete("/basic/{doc_id}")
 async def delete_mentor_basic(doc_id: str, token: str = ""):
-    mentor = _require_mentor(token)
+    mentor = _require_mentor_write(token)
     removed = store.remove_mentor_basic_doc(mentor["id"], doc_id)
     if not removed:
         raise HTTPException(404, "문서 없음")
@@ -447,10 +480,11 @@ async def delete_mentor_basic(doc_id: str, token: str = ""):
 
 
 @router.get("/basic/assets/{doc_id}")
-async def open_basic_asset(doc_id: str):
+async def open_basic_asset(doc_id: str, token: str = ""):
     doc = store.get_mentor_basic_doc(doc_id)
     if not doc:
         raise HTTPException(404, "문서 없음")
+    _require_doc_access(token, doc["mentor_id"])
 
     if doc.get("source_kind") == "link" and doc.get("source_url"):
         return RedirectResponse(doc["source_url"])
@@ -474,10 +508,9 @@ async def open_basic_asset(doc_id: str):
 
 # ── 초대 링크 ────────────────────────────────────────────
 @router.post("/invite")
-async def create_invite(mentor_id: str = "mentor_001"):
-    mentor = store.get_user(mentor_id)
-    if not mentor or mentor["role"] != "mentor":
-        raise HTTPException(404, "멘토 없음")
+async def create_invite(token: str = ""):
+    mentor = _require_mentor_write(token)
+    mentor_id = mentor["id"]
     code = mentor.get("invite_code")
     if not code:
         code = uuid.uuid4().hex[:8].upper()

@@ -7,6 +7,7 @@ import logging
 import re
 
 from services.llm_provider import LLMProvider
+from services.agent_a import _search_mentor_materials
 from db.store import store
 
 logger = logging.getLogger(__name__)
@@ -19,11 +20,16 @@ AGENT_B_PROMPT = """\
 [예약 가능 시간]
 {slots}
 
+[담당 멘토 학습 자료 검색 결과]
+{mentor_materials}
+
 [응답 규칙]
 1. 프로그래밍 질문에는 간결하게 답변 + 조교 보충수업 안내.
 2. 예약 요청 시 가능한 시간대를 선택지로 제시.
 3. 모호한 표현(예: "별표 나오는 거 모르겠어요")을 전문 용어로 번역.
 4. 코드 질문에는 핵심 개념을 짚어주세요.
+5. 멘토 자료가 질문 해결에 직접 도움이 될 때만 활용하고 mentor_doc_refs에 자료 ID를 넣으세요.
+   관련 자료가 없거나 질문과 무관하면 mentor_doc_refs는 빈 배열이어야 합니다.
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {{
@@ -33,7 +39,8 @@ AGENT_B_PROMPT = """\
   ],
   "needs_handoff": false,
   "suggest_booking": true,
-  "translated_query": "수강생 요청을 전문 용어로 번역한 버전"
+  "translated_query": "수강생 요청을 전문 용어로 번역한 버전",
+  "mentor_doc_refs": ["직접 참조한 멘토 자료 ID"]
 }}
 """
 
@@ -120,8 +127,14 @@ async def handle_agent_b(
             "suggest_booking": True,
         }
 
-    # ── 일반 학습 질문 → LLM 응답 ──
-    prompt = AGENT_B_PROMPT.format(slots=_slots_text())
+    # ── 일반 학습 질문 → 담당 멘토 자료 RAG + LLM 응답 ──
+    mentor_material_ctx, mentor_materials, basic_materials = _search_mentor_materials(
+        user_id, message
+    )
+    prompt = AGENT_B_PROMPT.format(
+        slots=_slots_text(),
+        mentor_materials=mentor_material_ctx,
+    )
     try:
         result = await llm.chat_json(prompt, message)
     except Exception:
@@ -131,7 +144,33 @@ async def handle_agent_b(
             "needs_handoff": False,
             "suggest_booking": False,
             "translated_query": "",
+            "mentor_doc_refs": [],
         }
+
+    selected_material_ids = set(result.get("mentor_doc_refs") or [])
+    related_materials = []
+    for doc_type, docs, asset_prefix in (
+        ("latest", mentor_materials, "/api/mentor/knowledge/assets"),
+        ("basic", basic_materials, "/api/mentor/basic/assets"),
+    ):
+        for doc in docs[:3]:
+            if doc["id"] not in selected_material_ids:
+                continue
+            related_materials.append({
+                "id": doc["id"],
+                "digest_title": doc.get("digest_title", doc.get("filename", "자료")),
+                "digest_summary": doc.get("digest_summary", ""),
+                "source_excerpt": doc.get("source_excerpt", ""),
+                "attachment_url": (
+                    doc.get("source_url")
+                    if doc.get("source_kind") == "link"
+                    else f"{asset_prefix}/{doc['id']}"
+                ),
+                "source_kind": doc.get("source_kind", "file"),
+                "doc_type": doc_type,
+            })
+    if related_materials:
+        result["related_materials"] = related_materials
     return result
 
 
