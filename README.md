@@ -34,16 +34,23 @@ Edu-Sync AI는 국비지원 코딩 학원 운영에 필요한 학습 지원·행
 - **일간 큐레이션**: 관리자가 날짜별 IT뉴스·채용정보·자격증·개발트렌드를 등록, 수강생에게 요일별 자동 배포
 - **카카오 채널 연동**: 카카오톡 챗봇 → 웹 챗봇 통합 인터페이스
 
+### 최근 보완 사항
+
+- **Agent B RAG 연결**: 학습·조교 지원 에이전트도 담당 멘토가 업로드한 자료를 검색해 학습 답변에 반영하도록 개선
+- **자료 노출 범위 축소**: 1:1 채팅에서 일반 질문만으로 전체 자료가 노출되지 않도록, AI 응답에 실제 참조된 자료만 카드로 표시
+- **역할 기반 API 보호**: 관리자·멘토·조교 기능은 세션 토큰과 역할을 확인하고, 데모 세션에서는 등록/수정/삭제 같은 변경 작업을 차단
+- **로컬 실행 안정화**: Render 무료 PostgreSQL 만료 시에도 `DATABASE_URL`을 비워 SQLite 로컬 DB와 seed 데이터로 데모 실행 가능
+
 ---
 
 ## 기술 스택
 
 ### Backend
 
-- **Framework**: FastAPI (Python 3.11+)
+- **Framework**: FastAPI (Python 3.11 권장)
 - **LLM**: OpenAI GPT (LangChain 비동기 호출)
 - **벡터 검색**: FAISS (faiss-cpu)
-- **ORM / DB**: SQLAlchemy 2.0 + PostgreSQL
+- **ORM / DB**: SQLAlchemy 2.0 + PostgreSQL(Render) / SQLite(로컬 개발)
 - **PDF 파싱**: pypdf
 - **배포**: Render (Web Service)
 
@@ -57,7 +64,7 @@ Edu-Sync AI는 국비지원 코딩 학원 운영에 필요한 학습 지원·행
 
 ### 인프라
 
-- **DB**: PostgreSQL (Render 호스팅)
+- **DB**: PostgreSQL (Render 호스팅), SQLite (로컬 데모 실행)
 - **배포**: Render 자동 배포 (GitHub main 브랜치 push 시)
 - **인증**: 세션 토큰 기반 + 카카오 OAuth 2.0, 역할별 관리 API 권한 검사
 
@@ -68,6 +75,7 @@ Edu-Sync AI는 국비지원 코딩 학원 운영에 필요한 학습 지원·행
 - 학생 웹 챗봇·예약·상담 요청은 로그인된 수강생 본인의 세션으로만 처리
 - 멘토 첨부 자료는 자료를 올린 멘토 또는 해당 멘토에게 배정된 수강생만 열람 가능
 - 관리자 큐레이션/공통 지식, 멘토 자료, 조교 일정 변경 API는 역할을 검증하며 데모 세션에서는 변경 불가
+- 공개 포트폴리오 배포 시에는 운영 DB URL, OpenAI API Key, 카카오 API Key를 `.env` 또는 Render 환경 변수로만 관리
 
 ---
 
@@ -156,15 +164,21 @@ KIT-AI-Learning/
 | `LLM_PROVIDER`        | LLM 공급자 (`openai`)        |
 | `EMBEDDING_PROVIDER`  | 임베딩 공급자 (`openai`)     |
 | `DATABASE_URL`        | PostgreSQL 접속 URL          |
+| `SEED_DATA`           | 데모 데이터 로드 여부 (`1` 또는 `0`) |
 | `KAKAO_REST_API_KEY`  | 카카오 REST API 키           |
 | `KAKAO_CLIENT_SECRET` | 카카오 Client Secret         |
 | `KAKAO_REDIRECT_URI`  | 카카오 OAuth 리다이렉트 URI  |
 | `FRONTEND_URL`        | 프론트엔드 URL               |
 | `CORS_ALLOW_ORIGINS`  | CORS 허용 오리진             |
 
+> 로컬 포트폴리오 확인용 실행에서는 Render PostgreSQL이 만료되었거나 꺼져 있어도 됩니다.  
+> 이 경우 `.env`에서 `DATABASE_URL=`로 비워 두고 `SEED_DATA=1`을 설정하면 SQLite 로컬 DB로 데모 계정이 생성됩니다.
+
 ---
 
 ## 로컬 실행
+
+> Python은 3.11 계열을 권장합니다. 최신 Python 버전에서는 `faiss-cpu` 호환성 문제로 설치가 실패할 수 있습니다.
 
 ### 1. 백엔드
 
@@ -173,8 +187,20 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# .env 파일에 환경변수 설정
 uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+로컬 데모 실행용 `.env` 예시:
+
+```env
+OPENAI_API_KEY=본인_OpenAI_API_Key
+OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
+DATABASE_URL=
+SEED_DATA=1
+FRONTEND_URL=http://localhost:5173
+CORS_ALLOW_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
 ### 2. 프론트엔드
@@ -216,6 +242,7 @@ uvicorn main:app --host 0.0.0.0 --port 8001
 - **빌드 커맨드**: `cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt`
 - **시작 커맨드**: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
 - **라이브 URL**: https://kit-ai-learning.onrender.com
+- **주의**: Render 무료 PostgreSQL은 기간 만료 시 `Suspended` 상태가 되며, 이 경우 배포 서버의 DB 연결이 실패합니다. 운영 배포를 유지하려면 유료 DB로 전환하거나 새 PostgreSQL 인스턴스를 연결해야 합니다.
 
 ---
 
