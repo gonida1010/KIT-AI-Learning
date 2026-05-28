@@ -9,6 +9,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,8 +19,6 @@ from fastapi.staticfiles import StaticFiles
 from services.rag import load_or_build_vectorstore, build_curation_vectorstore, get_curation_vectorstore
 from services.llm_provider import create_llm_provider, LLMProvider
 from db.store import store
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
